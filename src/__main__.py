@@ -2,8 +2,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from src.shema import FunctionDef
+from src.shema import FunctionDef, FunctionCallResult
 from pydantic import ValidationError
+from src.model import load_model, generate_function_call
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Call Me Maybe: LLM Function Calling Tool")
@@ -51,6 +52,20 @@ def load_json_file(filepath: str) -> list | dict:
         print(f"An enxepected error occured while reading: '{filepath}': {e}", file=sys.stderr)
         sys.exit(1)
 
+def extract_json_from_output(raw_text:str) -> dict | None:
+    if "<tool_call>" not in raw_text:
+        print("Warning: there is an missing tags.")
+        return None
+    json_data = raw_text.split("<tool_call>")[1]
+    json_data = json_data.split("</tool_call>")[0].strip()
+
+    try:
+        final_json = json.loads(json_data)
+        return final_json
+    except json.JSONDecodeError as e:
+        print(f"Error: invalid JSON data (corrupted or missing a comma).\nDetails: {e}", file=sys.stderr)
+        return None
+
 def main():
     args = parse_arguments()
 
@@ -70,6 +85,48 @@ def main():
         print(f"Error: The shema is invalid (missing key or wrong data type).\n'{e}'", file=sys.stderr)
         sys.exit(1)
 
+    model, tokenizer = load_model()
+
+    print("\nFiring up the inference engine...\n")
+    print("-" * 50)
+
+    final_results_list = []
+
+    for test in raw_prompts:
+        prompt_text = test['prompt']
+        print(f"User Prompt: {prompt_text}")
+        print("Thinking...")
+
+        raw_response = generate_function_call(model, tokenizer, prompt_text, available_functions)
+
+        print(f"AI Output:\n{raw_response}")
+        print("-" * 50)
+
+        extracted_dict = extract_json_from_output(raw_response)
+
+        if extracted_dict:
+            final_data = {
+                "prompt": prompt_text,
+                "name": extracted_dict["name"],
+                "parameters": extracted_dict["arguments"]
+            }
+
+            try:
+                validated_result = FunctionCallResult(**final_data)
+
+                final_results_list.append(validated_result.model_dump())
+                print("Successfully parsed and validated!")
+
+            except ValidationError as e:
+                print(f"Pydantic Validation Failed: {e}")
+
+    print("-" * 50)
+    print("Saving results to disk...")
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(final_results_list, f, indent=4)
+
+    print(f"SUCCESS! Saved {len(final_results_list)} results to {output_file}.")
 
 if __name__ == "__main__":
     main()
