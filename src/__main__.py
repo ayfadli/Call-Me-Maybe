@@ -2,9 +2,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from src.shema import FunctionDef, FunctionCallResult
 from pydantic import ValidationError
-from src.model import load_model, generate_function_call
+from llm_sdk import load_model, generate_function_call, extract_json_from_output, FunctionDef, FunctionCallResult
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Call Me Maybe: LLM Function Calling Tool")
@@ -51,20 +50,6 @@ def load_json_file(filepath: str) -> list | dict:
     except Exception as e:
         print(f"An enxepected error occured while reading: '{filepath}': {e}", file=sys.stderr)
         sys.exit(1)
-
-def extract_json_from_output(raw_text:str) -> dict | None:
-    if "<tool_call>" not in raw_text:
-        print("Warning: there is an missing tags.")
-        return None
-    json_data = raw_text.split("<tool_call>")[1]
-    json_data = json_data.split("</tool_call>")[0].strip()
-
-    try:
-        final_json = json.loads(json_data)
-        return final_json
-    except json.JSONDecodeError as e:
-        print(f"Error: invalid JSON data (corrupted or missing a comma).\nDetails: {e}", file=sys.stderr)
-        return None
 
 def main():
     args = parse_arguments()
