@@ -2,8 +2,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from pydantic import ValidationError
-from llm_sdk import load_model, generate_function_call, extract_json_from_output, FunctionDef, FunctionCallResult
+from pydantic import ValidationError, BaseModel
+from typing import Dict, Any
+from llm_sdk import Small_LLM_Model
+from src.vocab_parser import run_bouncer
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Call Me Maybe: LLM Function Calling Tool")
@@ -11,7 +13,7 @@ def parse_arguments():
     parser.add_argument(
         "--functions_definitions",
         type=str,
-        default="data/input/function_definitions.json",
+        default="data/input/functions_definition.json",
         help="Path to the JSON file containing function schemas."
     )
 
@@ -33,9 +35,23 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
+class FunctionDef(BaseModel):
+    name:str
+    description: str
+    parameters: Dict[str, Any]
+    returns: Dict[str, Any]
+
+
+class FunctionCallResult(BaseModel):
+    prompt: str
+    name: str
+    parameters: Dict[str, Any]
+
+
 def load_json_file(filepath: str) -> list | dict:
     if not Path(filepath).is_file():
-        print("Error: File not found")
+        print(f"Error: '{filepath}' File not found")
         sys.exit(1)
     try:
         with open(filepath, 'r') as file:
@@ -54,64 +70,67 @@ def load_json_file(filepath: str) -> list | dict:
 def main():
     args = parse_arguments()
 
-    definitions = args.functions_definitions
-    input_file = args.input
-    output_file =  args.output
+    raw_functions = load_json_file(args.functions_definitions)
+    raw_prompts = load_json_file(args.input)
 
-    raw_functions = load_json_file(definitions)
-    raw_prompts = load_json_file(input_file)
-
+    # 1. Load available functions and extract their names
     available_functions = []
     try:
         for item in raw_functions:
             available_functions.append(FunctionDef(**item))
-        print(f"Successfuly loaded and validated {len(available_functions)} functions.")
+        print(f"Successfully loaded {len(available_functions)} functions.")
     except ValidationError as e:
-        print(f"Error: The shema is invalid (missing key or wrong data type).\n'{e}'", file=sys.stderr)
+        print(f"Schema error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    model, tokenizer = load_model()
+    allowed_fn_names = [fn.name for fn in available_functions]
 
-    print("\nFiring up the inference engine...\n")
+    # 2. Boot the AI and load the Vocabulary dictionary ONCE
+    print("\nBooting AI and loading vocabulary...")
+    model = Small_LLM_Model()
+
+    vocab_file = model.get_path_to_vocab_file()
+    with open(vocab_file, 'r') as v:
+        my_dict = json.load(v)
+    my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
+
     print("-" * 50)
-
     final_results_list = []
 
+    # 3. The Generation Loop
     for test in raw_prompts:
         prompt_text = test['prompt']
-        print(f"User Prompt: {prompt_text}")
-        print("Thinking...")
+        print(f"\nUser Prompt: {prompt_text}")
 
-        raw_response = generate_function_call(model, tokenizer, prompt_text, available_functions)
+        # Let the Bouncer do the heavy lifting!
+        raw_json_string = run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions)
 
-        print(f"AI Output:\n{raw_response}")
-        print("-" * 50)
+        # Parse the perfect string into a real Python dictionary
+        try:
+            extracted_dict = json.loads(raw_json_string)
 
-        extracted_dict = extract_json_from_output(raw_response)
-
-        if extracted_dict:
+            # Match the Pydantic schema
             final_data = {
                 "prompt": prompt_text,
                 "name": extracted_dict["name"],
-                "parameters": extracted_dict["arguments"]
+                "parameters": extracted_dict["parameters"]
             }
 
-            try:
-                validated_result = FunctionCallResult(**final_data)
+            validated_result = FunctionCallResult(**final_data)
+            final_results_list.append(validated_result.model_dump())
+            print("✅ Successfully parsed and validated!")
 
-                final_results_list.append(validated_result.model_dump())
-                print("Successfully parsed and validated!")
+        except json.JSONDecodeError:
+            print("❌ Failed to parse JSON. (This should rarely happen now!)")
+        except ValidationError as e:
+            print(f"❌ Pydantic Validation Failed: {e}")
 
-            except ValidationError as e:
-                print(f"Pydantic Validation Failed: {e}")
-
-    print("-" * 50)
-    print("Saving results to disk...")
-
-    with open(output_file, 'w', encoding='utf-8') as f:
+    # 4. Save to Disk
+    print("\n" + "-" * 50)
+    with open(args.output, 'w', encoding='utf-8') as f:
         json.dump(final_results_list, f, indent=4)
 
-    print(f"SUCCESS! Saved {len(final_results_list)} results to {output_file}.")
+    print(f"🎉 SUCCESS! Saved {len(final_results_list)} results to {args.output}.")
 
 if __name__ == "__main__":
     main()

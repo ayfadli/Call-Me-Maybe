@@ -35,5 +35,44 @@
         "parameters": {
             "s": "hello"
         }
+    },
+    {
+        "prompt": "Reverse the string 'world'",
+        "name": "fn_reverse_string",
+        "parameters": {
+            "s": "world"
+        }
+    },
+    {
+        "prompt": "What is the square root of 16?",
+        "name": "fn_get_square_root",
+        "parameters": {
+            "a": 16
+        }
+    },
+    {
+        "prompt": "Calculate the square root of 144",
+        "name": "fn_get_square_root",
+        "parameters": {
+            "a": 144
+        }
+    },
+    {
+        "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
+        "name": "fn_substitute_string_with_regex",
+        "parameters": {
+            "source_string": "Programming is fun",
+            "regex": "([aeiouAEIOU])",
+            "replacement": "*"
+        }
+    },
+    {
+        "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
+        "name": "fn_substitute_string_with_regex",
+        "parameters": {
+            "source_string": "The cat sat on the mat with another cat",
+            "regex": "cat",
+            "replacement": "dog"
+        }
     }
 ]
