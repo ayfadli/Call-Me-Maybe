@@ -2,6 +2,8 @@ import argparse, json, sys
 from pydantic import BaseModel, ValidationError
 from typing import Dict, Any
 import pathlib
+from llm_sdk import Small_LLM_Model
+from src.vocab_parser import run_bouncer
 
 class FunctionDef(BaseModel):
     name: str
@@ -83,6 +85,12 @@ def main():
 
     allowed_fn_names = []
 
+    model = Small_LLM_Model()
+    vocab_file = model.get_path_to_vocab_file()
+    my_dict = load_json_file(vocab_file)
+
+    my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
+
     for fn in raw_functions:
         try:
             func = FunctionDef(**fn)
@@ -97,7 +105,52 @@ def main():
             print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
-    print(allowed_fn_names)
+    final_results_list = []
+    for prompt in raw_prompts:
+        prompt_text = prompt['prompt']
+
+        print(f"\nPrompt: {prompt_text}")
+
+        raw_json_string = run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions)
+
+        try:
+            json_str = raw_json_string.replace('\\', '\\\\')
+            extracted_dict = json.loads(json_str)
+
+            final_data = {
+                "prompt": prompt_text,
+                "name": extracted_dict["name"],
+                "parameters": extracted_dict["parameters"]
+            }
+
+            result = FunctionCallResult(**final_data)
+            final_results_list.append(result.model_dump())
+
+        except ValidationError as e:
+            print("Validation failed: output data is invalid or incomplete.", file=sys.stderr)
+            print(e.errors()[0])
+            sys.exit(1)
+
+        except Exception as e:
+            print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if not pathlib.Path(args.output).is_file():
+        print(f"This file '{args.output}' is not found, or it is a directory.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(args.output, 'w') as file:
+            json.dump(final_results_list, file, indent=4)
+
+    except PermissionError:
+        print(f"Permission denied in this file {args.output}", file=sys.stderr)
+        sys.exit(1)
+
+    except Exception as e:
+        print(f"An error occured.\nDetails: {e}", file=sys.stderr)
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

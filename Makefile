@@ -5,7 +5,7 @@ install:
 	uv pip install -r pyproject.toml
 
 debug:
-	uv run python -m pdb src
+	uv run python -m pdb -m src
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
@@ -14,3 +14,7 @@ clean:
 lint:
 	flake8 . --exclude=.venv
 	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+
+lint-strict:
+	flake8 . --exclude=.env
+	mypy . --strict

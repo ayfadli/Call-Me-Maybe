@@ -1,5 +1,6 @@
 import string
 import json
+import numpy as np
 
 
 def get_allowed_chars(current_string, allowed_fn_names):
@@ -33,43 +34,38 @@ def get_allowed_chars(current_string, allowed_fn_names):
 def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
 
     schema_hints = json.dumps(raw_functions)
-
     prompt = f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}. CRITICAL: If a parameter is a 'number', output raw digits without quotes (e.g. 42, NOT \"42\").\nUser: {prompt_text}\nTool Call: "
-
     input_ids = model.encode(prompt).tolist()[0]
 
     current_string = ""
     max_tokens = 150
     token_count = 0
 
+    printable_set = set(string.printable)
+    phase_4_valid_ids = [
+        token_id for token_id, token_str in my_dict.items()
+        if token_str and all(c in printable_set for c in token_str)
+    ]
+
     while '}}' not in current_string.replace(" ", "").replace("\n", "") and token_count < max_tokens:
 
         allowed_rules = get_allowed_chars(current_string, allowed_fn_names)
-        logits = model.get_logit_from_input_ids(input_ids)
 
-        for token_id in range(len(logits)):
-            token_str = my_dict.get(token_id)
+        logits = np.array(model.get_logits_from_input_ids(input_ids))
 
-            is_valid = False
+        masked_logits = np.full_like(logits, -np.inf)
 
-            if not token_str:
-                logits[token_id] = float('-inf')
-                continue
+        if (len(allowed_rules) > 10):
+            valid_ids = phase_4_valid_ids
+        else:
+            valid_ids = [
+                token_id for token_id, token_str in my_dict.items()
+                if token_str and any(rule.startswith(token_str) for rule in allowed_rules)
+            ]
 
-            if (len(allowed_rules) > 10):
-                if all(c in allowed_rules for c in token_str):
-                    is_valid = True
+        masked_logits[valid_ids] = logits[valid_ids]
 
-            else:
-                for rule in allowed_rules:
-                    if rule.startswith(token_str):
-                        is_valid = True
-                        break
-
-            if not is_valid:
-                logits[token_id] = float('-inf')
-
-        best_score = logits.index(max(logits))
+        best_score = int(np.argmax(masked_logits))
         winning_string = my_dict.get(best_score)
 
         current_string += winning_string
@@ -77,6 +73,8 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
 
         token_count += 1
         print(f"\rGenerating: {current_string}", end="", flush=True)
+
+    print()
 
     last_brace_idx = current_string.rfind('}')
 
