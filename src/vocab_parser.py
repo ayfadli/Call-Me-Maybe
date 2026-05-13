@@ -31,7 +31,7 @@ def get_allowed_chars(current_string, allowed_fn_names):
     return list(string.printable)
 
 
-def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
+def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions, phase_4_valid_ids, clean_dict_items):
 
     schema_hints = json.dumps(raw_functions)
     prompt = f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}. CRITICAL: If a parameter is a 'number', output raw digits without quotes (e.g. 42, NOT \"42\").\nUser: {prompt_text}\nTool Call: "
@@ -41,11 +41,7 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
     max_tokens = 150
     token_count = 0
 
-    printable_set = set(string.printable)
-    phase_4_valid_ids = [
-        token_id for token_id, token_str in my_dict.items()
-        if token_str and all(c in printable_set for c in token_str)
-    ]
+    clean_dict_items = [(k, v) for k, v in my_dict.items() if v]
 
     while '}}' not in current_string.replace(" ", "").replace("\n", "") and token_count < max_tokens:
 
@@ -59,8 +55,8 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
             valid_ids = phase_4_valid_ids
         else:
             valid_ids = [
-                token_id for token_id, token_str in my_dict.items()
-                if token_str and any(rule.startswith(token_str) for rule in allowed_rules)
+                token_id for token_id, token_str in clean_dict_items
+                if any(rule.startswith(token_str) for rule in allowed_rules)
             ]
 
         masked_logits[valid_ids] = logits[valid_ids]
@@ -72,7 +68,7 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions):
         input_ids.append(best_score)
 
         token_count += 1
-        print(f"\rGenerating: {current_string}", end="", flush=True)
+        # print(f"\rGenerating: {current_string}", end="", flush=True)
 
     print()
 

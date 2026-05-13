@@ -4,6 +4,8 @@ from typing import Dict, Any
 import pathlib
 from llm_sdk import Small_LLM_Model
 from src.vocab_parser import run_bouncer
+from datetime import datetime
+import string
 
 class FunctionDef(BaseModel):
     name: str
@@ -78,6 +80,7 @@ def load_json_file(filename):
 
 
 def main():
+    print(f"Start: {datetime.now().time()}")
     args = parse_arguments()
 
     raw_functions = load_json_file(args.functions_definition)
@@ -90,6 +93,22 @@ def main():
     my_dict = load_json_file(vocab_file)
 
     my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
+
+    print("Pre-computing vocab masks... (This takes 1 second)")
+    printable_set = set(string.printable)
+
+    # 1. Calculate Phase 4 IDs globally
+    phase_4_valid_ids = [
+        token_id for token_id, token_str in my_dict.items()
+        if token_str and all(c in printable_set for c in token_str)
+    ]
+
+    # 2. Build a globally filtered dictionary (strips out ~120,000 useless foreign tokens!)
+    clean_dict_items = [
+        (k, v) for k, v in my_dict.items()
+        if v and all(c in printable_set for c in v)
+    ]
+    print("Pre-computation complete!")
 
     for fn in raw_functions:
         try:
@@ -111,7 +130,15 @@ def main():
 
         print(f"\nPrompt: {prompt_text}")
 
-        raw_json_string = run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions)
+        raw_json_string = run_bouncer(
+            model,
+            prompt_text,
+            my_dict,
+            allowed_fn_names,
+            raw_functions,
+            phase_4_valid_ids,
+            clean_dict_items
+        )
 
         try:
             json_str = raw_json_string.replace('\\', '\\\\')
@@ -151,6 +178,7 @@ def main():
         print(f"An error occured.\nDetails: {e}", file=sys.stderr)
         sys.exit(1)
 
-
+    print("All done !")
+    print(f"End of program: {datetime.now().time()}")
 if __name__ == "__main__":
     main()
