@@ -1,10 +1,9 @@
 [
     {
-        "prompt": "What is the sum of 2 and 3?",
-        "name": "fn_add_numbers",
+        "prompt": "Hi, how are you ?",
+        "name": "fn_greet",
         "parameters": {
-            "a": 2,
-            "b": 3
+            "name": "user"
         }
     },
     {

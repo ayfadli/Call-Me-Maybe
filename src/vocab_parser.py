@@ -68,7 +68,7 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions, ph
         input_ids.append(best_score)
 
         token_count += 1
-        # print(f"\rGenerating: {current_string}", end="", flush=True)
+        print(f"\rGenerating: {current_string}", end="", flush=True)
 
     print()
 

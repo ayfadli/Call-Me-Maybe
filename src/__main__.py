@@ -45,7 +45,7 @@ def parse_arguments():
                         '--output',
                         metavar='',
                         type=str,
-                        default="data/output/function_calls.json",
+                        default="data/output/function_calling_results.json",
                         help="Path to the JSON output file.")
 
 
@@ -94,11 +94,10 @@ def main():
 
     my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
 
-    print("Pre-computing vocab masks... (This takes 1 second)")
     printable_set = set(string.printable)
 
-    # 1. Calculate Phase 4 IDs globally
-    phase_4_valid_ids = [
+    #This is a list comprehension to filter the tokens (words or chars), to keep just the valid tokens (ids).
+    valid_ids = [
         token_id for token_id, token_str in my_dict.items()
         if token_str and all(c in printable_set for c in token_str)
     ]
@@ -108,11 +107,11 @@ def main():
         (k, v) for k, v in my_dict.items()
         if v and all(c in printable_set for c in v)
     ]
-    print("Pre-computation complete!")
 
     for fn in raw_functions:
         try:
             func = FunctionDef(**fn)
+            print(fn)
             allowed_fn_names.append(func.name)
 
         except ValidationError as e:
@@ -136,7 +135,7 @@ def main():
             my_dict,
             allowed_fn_names,
             raw_functions,
-            phase_4_valid_ids,
+            valid_ids,
             clean_dict_items
         )
 
