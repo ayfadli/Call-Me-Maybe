@@ -1,9 +1,10 @@
 [
     {
-        "prompt": "Hi, how are you ?",
-        "name": "fn_greet",
+        "prompt": "What is zzz?",
+        "name": "fn_add_numbers",
         "parameters": {
-            "name": "user"
+            "a": 3,
+            "b": 0
         }
     },
     {

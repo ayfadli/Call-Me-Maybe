@@ -1,9 +1,10 @@
 import string
 import json
 import numpy as np
+from typing import Any
 
 
-def get_allowed_chars(current_string, allowed_fn_names):
+def get_allowed_chars(current_string: str, allowed_fn_names: list[str]) -> list[str]:
     target_prefix = '{"name":"'
     bridge = '","parameters":{'
 
@@ -31,28 +32,36 @@ def get_allowed_chars(current_string, allowed_fn_names):
     return list(string.printable)
 
 
-def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions, phase_4_valid_ids, clean_dict_items):
+def run_bouncer(
+    model: Any,
+    prompt_text: str,
+    my_dict: dict[int, str],
+    allowed_fn_names: list[str],
+    raw_functions: list[dict[str, Any]],
+    phase_4_valid_ids: list[int],
+    clean_dict_items: list[tuple[int, str]],
+) -> str:
 
     schema_hints = json.dumps(raw_functions)
     prompt = f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}. CRITICAL: If a parameter is a 'number', output raw digits without quotes (e.g. 42, NOT \"42\").\nUser: {prompt_text}\nTool Call: "
-    input_ids = model.encode(prompt).tolist()[0]
+    input_ids: list[int] = model.encode(prompt).tolist()[0]
 
-    current_string = ""
-    max_tokens = 150
-    token_count = 0
+    current_string: str = ""
+    max_tokens: int = 150
+    token_count: int = 0
 
     clean_dict_items = [(k, v) for k, v in my_dict.items() if v]
 
     while '}}' not in current_string.replace(" ", "").replace("\n", "") and token_count < max_tokens:
 
-        allowed_rules = get_allowed_chars(current_string, allowed_fn_names)
+        allowed_rules: list[str] = get_allowed_chars(current_string, allowed_fn_names)
 
-        logits = np.array(model.get_logits_from_input_ids(input_ids))
+        logits: np.ndarray = np.array(model.get_logits_from_input_ids(input_ids))
 
-        masked_logits = np.full_like(logits, -np.inf)
+        masked_logits: np.ndarray = np.full_like(logits, -np.inf)
 
         if (len(allowed_rules) > 10):
-            valid_ids = phase_4_valid_ids
+            valid_ids: list[int] = phase_4_valid_ids
         else:
             valid_ids = [
                 token_id for token_id, token_str in clean_dict_items
@@ -61,8 +70,8 @@ def run_bouncer(model, prompt_text, my_dict, allowed_fn_names, raw_functions, ph
 
         masked_logits[valid_ids] = logits[valid_ids]
 
-        best_score = int(np.argmax(masked_logits))
-        winning_string = my_dict.get(best_score)
+        best_score: int = int(np.argmax(masked_logits))
+        winning_string: str = my_dict.get(best_score)
 
         current_string += winning_string
         input_ids.append(best_score)

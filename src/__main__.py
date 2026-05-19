@@ -1,6 +1,6 @@
 import argparse, json, sys
 from pydantic import BaseModel, ValidationError
-from typing import Dict, Any
+from typing import Any, Dict
 import pathlib
 from llm_sdk import Small_LLM_Model
 from src.vocab_parser import run_bouncer
@@ -19,7 +19,7 @@ class FunctionCallResult(BaseModel):
     parameters: Dict[str, Any]
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="CallMeMaybe",
         description="Call Me Maybe: LLM Function Calling Tool",
@@ -53,7 +53,7 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
-def load_json_file(filename):
+def load_json_file(filename: str) -> Any:
 
     if not pathlib.Path(filename).is_file():
         print(f"This file {filename} is not found, or it is a directory.", file=sys.stderr)
@@ -79,31 +79,31 @@ def load_json_file(filename):
 
 
 
-def main():
+def main() -> None:
     print(f"Start: {datetime.now().time()}")
     args = parse_arguments()
 
-    raw_functions = load_json_file(args.functions_definition)
-    raw_prompts = load_json_file(args.input)
+    raw_functions: list[dict[str, Any]] = load_json_file(args.functions_definition)
+    raw_prompts: list[dict[str, Any]] = load_json_file(args.input)
 
-    allowed_fn_names = []
+    allowed_fn_names: list[str] = []
 
     model = Small_LLM_Model()
     vocab_file = model.get_path_to_vocab_file()
-    my_dict = load_json_file(vocab_file)
+    my_dict: dict[int, str] = load_json_file(vocab_file)
 
     my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
 
-    printable_set = set(string.printable)
+    printable_set: set[str] = set(string.printable)
 
     #This is a list comprehension to filter the tokens (words or chars), to keep just the valid tokens (ids).
-    valid_ids = [
+    valid_ids: list[int] = [
         token_id for token_id, token_str in my_dict.items()
         if token_str and all(c in printable_set for c in token_str)
     ]
 
     # 2. Build a globally filtered dictionary (strips out ~120,000 useless foreign tokens!)
-    clean_dict_items = [
+    clean_dict_items: list[tuple[int, str]] = [
         (k, v) for k, v in my_dict.items()
         if v and all(c in printable_set for c in v)
     ]
@@ -123,9 +123,9 @@ def main():
             print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
-    final_results_list = []
+    final_results_list: list[dict[str, Any]] = []
     for prompt in raw_prompts:
-        prompt_text = prompt['prompt']
+        prompt_text: str = prompt['prompt']
 
         print(f"\nPrompt: {prompt_text}")
 
