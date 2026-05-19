@@ -1,2 +1,6 @@
-.env
-tests/
+.venv/
+__pycache__/
+*.pyc
+data/
+data_*/
+.envrc

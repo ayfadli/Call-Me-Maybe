@@ -140,8 +140,19 @@ def main() -> None:
         )
 
         try:
-            json_str = raw_json_string.replace('\\', '\\\\')
+            json_str = re.sub(r'\\(?![/"\\bfnrt])', r'\\\\', raw_json_string)
             extracted_dict = json.loads(json_str)
+
+            for func in raw_functions:
+                if func['name'] == extracted_dict['name']:
+                    expected_params = func.get("parameters", {})
+
+                    for key, val in extracted_dict["parameters"].items():
+
+                        if key in expected_params and expected_params[key].get("type") == "number":
+                            if isinstance(val, int) and not isinstance(val, bool):
+                                extracted_dict["parameters"][key] = float(val)
+                        break
 
             final_data = {
                 "prompt": prompt_text,

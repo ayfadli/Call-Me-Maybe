@@ -43,7 +43,7 @@ def run_bouncer(
 ) -> str:
 
     schema_hints = json.dumps(raw_functions)
-    prompt = f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}. CRITICAL: If a parameter is a 'number', output raw digits without quotes (e.g. 42, NOT \"42\").\nUser: {prompt_text}\nTool Call: "
+    prompt = f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}. CRITICAL: If a parameter is a 'number', output float format without quotes (e.g. 42.0, NOT \"42\").\nUser: {prompt_text}\nTool Call: "
     input_ids: list[int] = model.encode(prompt).tolist()[0]
 
     current_string: str = ""
