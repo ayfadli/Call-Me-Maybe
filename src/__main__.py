@@ -6,6 +6,7 @@ from llm_sdk import Small_LLM_Model
 from src.vocab_parser import run_bouncer
 from datetime import datetime
 import string
+import re
 
 class FunctionDef(BaseModel):
     name: str
@@ -140,7 +141,9 @@ def main() -> None:
         )
 
         try:
-            json_str = re.sub(r'\\(?![/"\\bfnrt])', r'\\\\', raw_json_string)
+
+            #The (?!...) part means "not followed by"
+            json_str = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
             extracted_dict = json.loads(json_str)
 
             for func in raw_functions:
