@@ -50,7 +50,6 @@ def parse_arguments() -> argparse.Namespace:
                         help="Path to the JSON output file.")
 
 
-
     args = parser.parse_args()
     return args
 
@@ -110,11 +109,12 @@ def main() -> None:
         if v and all(c in printable_set for c in v)
     ]
 
+    func_params = dict()
     for fn in raw_functions:
         try:
             func = FunctionDef(**fn)
-            print(fn)
             allowed_fn_names.append(func.name)
+            func_params[func.name] = len(func.parameters)
 
         except ValidationError as e:
             print("Validation failed: input data is invalid or incomplete.", file=sys.stderr)
@@ -124,6 +124,8 @@ def main() -> None:
         except Exception as e:
             print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
+
+    print(func_params)
 
     final_results_list: list[dict[str, Any]] = []
     for prompt in raw_prompts:
@@ -142,7 +144,6 @@ def main() -> None:
         )
 
         try:
-
             #The (?!...) part means "not followed by"
             json_str = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
             extracted_dict = json.loads(json_str)
@@ -181,7 +182,9 @@ def main() -> None:
             sys.exit(1)
 
     output_file = pathlib.Path(args.output)
-    output_file.parent.mkdir(exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    pathlib.Path(args.output).touch(exist_ok=True)
 
     if not output_file.is_file():
         print(f"This file '{args.output}' is not found, or it is a directory.", file=sys.stderr)
