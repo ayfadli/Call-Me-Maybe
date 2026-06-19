@@ -81,7 +81,6 @@ def load_json_file(filename: str) -> Any:
 
 
 def main() -> None:
-    print(f"Start: {datetime.now().time()}")
     args = parse_arguments()
 
     raw_functions: list[dict[str, Any]] = load_json_file(args.functions_definition)
@@ -90,6 +89,8 @@ def main() -> None:
     allowed_fn_names: list[str] = []
 
     model = Small_LLM_Model()
+
+    start_time = datetime.now()
     vocab_file = model.get_path_to_vocab_file()
     my_dict: dict[int, str] = load_json_file(vocab_file)
 
@@ -179,7 +180,10 @@ def main() -> None:
             print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
-    if not pathlib.Path(args.output).is_file():
+    output_file = pathlib.Path(args.output)
+    output_file.parent.mkdir(exist_ok=True)
+
+    if not output_file.is_file():
         print(f"This file '{args.output}' is not found, or it is a directory.", file=sys.stderr)
         sys.exit(1)
 
@@ -195,7 +199,11 @@ def main() -> None:
         print(f"An error occured.\nDetails: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print("All done !")
-    print(f"End of program: {datetime.now().time()}")
+    elapsed_time = datetime.now() - start_time
+    total_seconds = elapsed_time.total_seconds()
+    minutes = int(total_seconds // 60)
+    seconds = int(total_seconds % 60)
+
+    print(f"\nAll done in {minutes}m {seconds}s!")
 if __name__ == "__main__":
     main()
