@@ -3,7 +3,7 @@ from pydantic import BaseModel, ValidationError
 from typing import Any, Dict
 import pathlib
 from llm_sdk import Small_LLM_Model
-from src.vocab_parser import run_bouncer
+from src.vocab_parser import generate_constrained_json
 from datetime import datetime
 import string
 import re
@@ -130,7 +130,7 @@ def main() -> None:
 
         print(f"\nPrompt: {prompt_text}")
 
-        raw_json_string = run_bouncer(
+        raw_json_string = generate_constrained_json(
             model,
             prompt_text,
             my_dict,
@@ -143,19 +143,23 @@ def main() -> None:
         try:
 
             #The (?!...) part means "not followed by"
-            json_str = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
+            json_str = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
             extracted_dict = json.loads(json_str)
 
-            for func in raw_functions:
-                if func['name'] == extracted_dict['name']:
-                    expected_params = func.get("parameters", {})
+            fn_name = extracted_dict.get("name")
+            expected_params = {}
+            for fn in raw_functions:
+                if fn.get("name") == fn_name:
+                    expected_params = fn.get("parameters", {})
+                    break
 
-                    for key, val in extracted_dict["parameters"].items():
-
-                        if key in expected_params and expected_params[key].get("type") == "number":
-                            if isinstance(val, int) and not isinstance(val, bool):
-                                extracted_dict["parameters"][key] = float(val)
-                        break
+            if "parameters" in extracted_dict:
+                for key, val in extracted_dict["parameters"].items():
+                    if key in expected_params and expected_params[key].get("type") == "number":
+                        if isinstance(val, int) and not isinstance(val, bool):
+                            extracted_dict["parameters"][key] = float(val)
+                    elif isinstance(val, str):
+                        extracted_dict["parameters"][key] = val.strip()
 
             final_data = {
                 "prompt": prompt_text,
