@@ -140,7 +140,8 @@ def main() -> None:
             allowed_fn_names,
             raw_functions,
             valid_ids,
-            clean_dict_items
+            clean_dict_items,
+            func_params
         )
 
         try:
