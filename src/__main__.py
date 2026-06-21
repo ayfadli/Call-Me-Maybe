@@ -210,4 +210,7 @@ def main() -> None:
 
     print(f"\nAll done in {minutes}m {seconds}s!")
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
