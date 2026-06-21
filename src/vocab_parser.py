@@ -52,9 +52,8 @@ def generate_constrained_json(
     max_tokens: int = 150
     token_count: int = 0
 
-    # --- 🚀 PRE-COMPUTING CACHES & MASKS (Outside the loop) ---
-    dummy_logits = np.array(model.get_logits_from_input_ids(input_ids))
-    vocab_size = dummy_logits.shape[-1]  # This will perfectly grab 151936!
+    vocab_logits = np.array(model.get_logits_from_input_ids(input_ids))
+    vocab_size = vocab_logits.shape[-1]
 
     target_phrases = allowed_fn_names + ['{"name":"', '","parameters":{', '}']
     mini_dict = []
@@ -65,8 +64,8 @@ def generate_constrained_json(
 
     # Pre-build the Phase 4 Boolean Mask
     phase_4_mask = np.zeros(vocab_size, dtype=bool)
-    for vid in phase_4_valid_ids:
-        phase_4_mask[vid] = True
+    for v_id in phase_4_valid_ids:
+        phase_4_mask[v_id] = True
 
     # Pre-build the No-Comma Mask (for when the quota is met)
     phase_4_no_comma_mask = phase_4_mask.copy()

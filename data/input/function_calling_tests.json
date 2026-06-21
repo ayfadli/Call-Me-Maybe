@@ -1,35 +1,6 @@
 [
   {
-    "prompt": "What is the sum of '2' and '3' and '4'?"
-  },
-  {
-    "prompt": "What is the sum of 265 and 345?"
-  },
-  {
-    "prompt": "Greet shrek"
-  },
-  {
-    "prompt": "Greet john"
-  },
-  {
-    "prompt": "Reverse the string 'hello'"
-  },
-  {
-    "prompt": "Reverse the string 'world'"
-  },
-  {
-    "prompt": "What is the square root of 16?"
-  },
-  {
-    "prompt": "Calculate the square root of 144"
-  },
-  {
-    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
-  },
-  {
-    "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
-  },
-  {
-    "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+    "prompt": "Reverse this string: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
   }
 ]
+c
