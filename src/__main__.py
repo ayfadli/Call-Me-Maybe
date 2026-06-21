@@ -91,21 +91,21 @@ def main() -> None:
 
     start_time = datetime.now()
     vocab_file = model.get_path_to_vocab_file()
-    my_dict: dict[int, str] = load_json_file(vocab_file)
+    vocab_dict: dict[int, str] = load_json_file(vocab_file)
 
-    my_dict = {v: k.replace('Ġ', ' ') for k, v in my_dict.items()}
+    vocab_dict = {v: k.replace('Ġ', ' ') for k, v in vocab_dict.items()}
 
     printable_set: set[str] = set(string.printable)
 
     #This is a list comprehension to filter the tokens (words or chars), to keep just the valid tokens (ids).
     valid_ids: list[int] = [
-        token_id for token_id, token_str in my_dict.items()
+        token_id for token_id, token_str in vocab_dict.items()
         if token_str and all(c in printable_set for c in token_str)
     ]
 
     # 2. Build a globally filtered dictionary (strips out ~120,000 useless foreign tokens!)
     clean_dict_items: list[tuple[int, str]] = [
-        (k, v) for k, v in my_dict.items()
+        (k, v) for k, v in vocab_dict.items()
         if v and all(c in printable_set for c in v)
     ]
 
@@ -125,8 +125,6 @@ def main() -> None:
             print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
-    print(func_params)
-
     final_results_list: list[dict[str, Any]] = []
     for prompt in raw_prompts:
         prompt_text: str = prompt['prompt']
@@ -136,7 +134,7 @@ def main() -> None:
         raw_json_string = generate_constrained_json(
             model,
             prompt_text,
-            my_dict,
+            vocab_dict,
             allowed_fn_names,
             raw_functions,
             valid_ids,

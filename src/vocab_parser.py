@@ -22,7 +22,7 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
     return list(string.printable)
 
 def generate_constrained_json(
-    model: Any, prompt_text: str, my_dict: dict[int, str], allowed_fn_names: list[str],
+    model: Any, prompt_text: str, vocab_dict: dict[int, str], allowed_fn_names: list[str],
     raw_functions: list[dict[str, Any]], phase_4_valid_ids: list[int],
     clean_dict_items: list[tuple[int, str]], func_parameters: dict[str, int]
 ) -> str:
@@ -34,7 +34,7 @@ def generate_constrained_json(
     vocab_size = np.array(model.get_logits_from_input_ids(input_ids)).shape[-1]
 
     target_phrases = allowed_fn_names + ['{"name":"', '","parameters":{', '}']
-    mini_dict = [(i, s) for i, s in clean_dict_items if s.strip() == "}" or any(s in phrase for phrase in target_phrases)]
+    mini_dict = [(i, s) for i, s in clean_dict_items if  any(s in phrase for phrase in target_phrases)]
 
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[phase_4_valid_ids] = True
@@ -84,7 +84,7 @@ def generate_constrained_json(
         logits[~mask] = -np.inf
         best_id = int(np.argmax(logits))
 
-        current_str += my_dict.get(best_id, "")
+        current_str += vocab_dict.get(best_id, "")
         input_ids.append(best_id)
 
         if current_str.endswith('"') and not bridge_injected and prefix in current_str:
