@@ -4,6 +4,7 @@ import re
 import numpy as np
 from typing import Any
 
+
 def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
     prefix = '{"name":"'
     if len(current_str) < len(prefix):
@@ -24,7 +25,8 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
 def generate_constrained_json(
     model: Any, prompt_text: str, vocab_dict: dict[int, str], allowed_fn_names: list[str],
     raw_functions: list[dict[str, Any]], phase_4_valid_ids: list[int],
-    clean_dict_items: list[tuple[int, str]], func_parameters: dict[str, int]
+    clean_dict_items: list[tuple[int, str]], func_parameters: dict[str, int],
+    visualize: bool
 ) -> str:
 
     schema = json.dumps(raw_functions)
@@ -52,12 +54,21 @@ def generate_constrained_json(
     bridge_injected = False
 
     max_tokens = 150
+    ids_blacklist = []
+    just_rolled_back = False
 
     while '}}' not in current_str.replace(" ", "").replace("\n", "") and len(input_ids) < len(prompt) + max_tokens:
 
         rules = get_allowed_chars(current_str, allowed_fn_names)
         logits = np.array(model.get_logits_from_input_ids(input_ids))
         mask = np.zeros(vocab_size, dtype=bool)
+
+        if visualize:
+            # np.argsort sorts smallest to largest. [-3:] gets the last 3 (the highest). [::-1] reverses it to highest-first.
+            top_3_raw_ids = np.argsort(logits)[-3:][::-1]
+            top_3_raw_tokens = [model.decode([t]) for t in top_3_raw_ids]
+            raw_scores = [round(logits[t], 2) for t in top_3_raw_ids]
+
 
         if len(rules) > 10:
             # Phase 4: Quota Shield
@@ -78,21 +89,44 @@ def generate_constrained_json(
         else:
             # Phases 1-3: Strict Spelling
             for i, s in mini_dict:
-                if any(r.startswith(s) for r in rules): mask[i] = True
+                if any(rule.startswith(s) for rule in rules): mask[i] = True
 
         # Bare-metal mutation
         logits[~mask] = -np.inf
+
+        # THE RECOVERY SYSTEM
+        if np.max(logits) == -np.inf:
+            bad_token_id = input_ids.pop()
+            current_str = model.decode(input_ids)
+            ids_blacklist.append(bad_token_id)
+            just_rolled_back = True
+            print("[SYSTEM] Dead end detected! Initiating rollback...")
+            continue
+
+        for bad_id in ids_blacklist:
+            logits[bad_id] = -np.inf
+
+        just_rolled_back = False
+
         best_id = int(np.argmax(logits))
 
         current_str += vocab_dict.get(best_id, "")
         input_ids.append(best_id)
 
+        # BRIDGE INJECTION
         if current_str.endswith('"') and not bridge_injected and prefix in current_str:
             bridge = ',"parameters":{'
             current_str += bridge
             input_ids.extend(model.encode(bridge).tolist()[0])
             bridge_injected = True
             continue
+
+        if visualize:
+            top_3_masked_ids = np.argsort(logits)[-3:][::-1]
+            top_3_masked_tokens = [model.decode([t]) for t in top_3_masked_ids]
+            print(f"\n[Raw AI Wanted]: {list(zip(top_3_raw_tokens, raw_scores))}")
+            print(f"[We Forced]    : {top_3_masked_tokens[0]} (ID: {top_3_masked_ids[0]})")
+
 
         print(f"\rGenerating: {current_str}", end="", flush=True)
 

@@ -49,6 +49,14 @@ def parse_arguments() -> argparse.Namespace:
                         default="data/output/function_calling_results.json",
                         help="Path to the JSON output file.")
 
+    parser.add_argument('--model',
+                        type=str,
+                        default="Qwen/Qwen3-0.6B",
+                        help="HuggingFace Model ID")
+
+    parser.add_argument('--visualize',
+                        action="store_true",
+                        help="Show token probabilities in real-time")
 
     args = parser.parse_args()
     return args
@@ -87,7 +95,7 @@ def main() -> None:
 
     allowed_fn_names: list[str] = []
 
-    model = Small_LLM_Model()
+    model = Small_LLM_Model(model_name=args.model)
 
     start_time = datetime.now()
     vocab_file = model.get_path_to_vocab_file()
@@ -139,7 +147,8 @@ def main() -> None:
             raw_functions,
             valid_ids,
             clean_dict_items,
-            func_params
+            func_params,
+            args.visualize
         )
 
         try:
