@@ -1,4 +1,6 @@
-import argparse, json, sys
+import argparse
+import json
+import sys
 from pydantic import BaseModel, ValidationError
 from typing import Any, Dict
 import pathlib
@@ -8,11 +10,13 @@ from datetime import datetime
 import string
 import re
 
+
 class FunctionDef(BaseModel):
     name: str
     description: str
     parameters: Dict[str, Any]
     returns: Dict[str, Any]
+
 
 class FunctionCallResult(BaseModel):
     prompt: str
@@ -24,17 +28,17 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="CallMeMaybe",
         description="Call Me Maybe: LLM Function Calling Tool",
-        usage="uv run python -m src [--functions_definition <function_definition_file>] [--input <input_file>] [--output <output_file>]",
-        # epilog="options: \n--functions_definition \tPath to the JSON file containing the functions definitions.\n--input \tPath to the JSON file containing the prompts.\n--output \tPath to the JSON output file."
+        usage="uv run python -m src [--functions_definition "
+        "<function_definition_file>] [--input <input_file>] [--output <output_file>]"
     )
 
     parser.add_argument(
-                        '--functions_definition',
-                        metavar='',
-                        type=str,
-                        default="data/input/functions_definition.json",
-                        help="Path to JSON file containing the functions definitions."
-                        )
+        '--functions_definition',
+        metavar='',
+        type=str,
+        default="data/input/functions_definition.json",
+        help="Path to JSON file containing the functions definitions."
+    )
 
     parser.add_argument('--input',
                         metavar='',
@@ -43,11 +47,11 @@ def parse_arguments() -> argparse.Namespace:
                         help="Path to the file containing the prompts.")
 
     parser.add_argument(
-                        '--output',
-                        metavar='',
-                        type=str,
-                        default="data/output/function_calling_results.json",
-                        help="Path to the JSON output file.")
+        '--output',
+        metavar='',
+        type=str,
+        default="data/output/function_calling_results.json",
+        help="Path to the JSON output file.")
 
     parser.add_argument('--model',
                         type=str,
@@ -61,10 +65,13 @@ def parse_arguments() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+
 def load_json_file(filename: str) -> Any:
 
     if not pathlib.Path(filename).is_file():
-        print(f"This file {filename} is not found, or it is a directory.", file=sys.stderr)
+        print(
+            f"This file {filename} is not found, or it is a directory.",
+            file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -72,7 +79,8 @@ def load_json_file(filename: str) -> Any:
             json_data = json.load(file)
 
     except json.JSONDecodeError:
-        print("The JSON file is invalid or corrupted. A required key or value is missing.", file=sys.stderr)
+        print("The JSON file is invalid or corrupted. "
+              "A required key or value is missing.", file=sys.stderr)
         sys.exit(1)
 
     except PermissionError:
@@ -86,11 +94,11 @@ def load_json_file(filename: str) -> Any:
     return json_data
 
 
-
 def main() -> None:
     args = parse_arguments()
 
-    raw_functions: list[dict[str, Any]] = load_json_file(args.functions_definition)
+    raw_functions: list[dict[str, Any]] = load_json_file(
+        args.functions_definition)
     raw_prompts: list[dict[str, Any]] = load_json_file(args.input)
 
     allowed_fn_names: list[str] = []
@@ -105,13 +113,13 @@ def main() -> None:
 
     printable_set: set[str] = set(string.printable)
 
-    #This is a list comprehension to filter the tokens (words or chars), to keep just the valid tokens (ids).
+    # Filter the tokens, to keep just the valid tokens (ids).
     valid_ids: list[int] = [
         token_id for token_id, token_str in vocab_dict.items()
         if token_str and all(c in printable_set for c in token_str)
     ]
 
-    # 2. Build a globally filtered dictionary (strips out ~120,000 useless foreign tokens!)
+    # 2. strips out ~120,000 useless foreign tokens!
     clean_dict_items: list[tuple[int, str]] = [
         (k, v) for k, v in vocab_dict.items()
         if v and all(c in printable_set for c in v)
@@ -125,12 +133,15 @@ def main() -> None:
             func_params[func.name] = len(func.parameters)
 
         except ValidationError as e:
-            print("Validation failed: input data is invalid or incomplete.", file=sys.stderr)
+            print(
+                "Validation failed: input data is invalid or incomplete.",
+                file=sys.stderr)
             print(e.errors()[0])
             sys.exit(1)
 
         except Exception as e:
-            print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
+            print(
+                f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
     final_results_list: list[dict[str, Any]] = []
@@ -152,8 +163,9 @@ def main() -> None:
         )
 
         try:
-            #The (?!...) part means "not followed by"
-            json_str = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
+            # The (?!...) part means "not followed by"
+            json_str = re.sub(
+                r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
             extracted_dict = json.loads(json_str)
 
             fn_name = extracted_dict.get("name")
@@ -165,7 +177,10 @@ def main() -> None:
 
             if "parameters" in extracted_dict:
                 for key, val in extracted_dict["parameters"].items():
-                    if key in expected_params and expected_params[key].get("type") == "number":
+                    if (
+                        key in expected_params
+                        and expected_params[key].get("type") == "number"
+                         ):
                         if isinstance(val, int) and not isinstance(val, bool):
                             extracted_dict["parameters"][key] = float(val)
                     elif isinstance(val, str):
@@ -181,12 +196,15 @@ def main() -> None:
             final_results_list.append(result.model_dump())
 
         except ValidationError as e:
-            print("Validation failed: output data is invalid or incomplete.", file=sys.stderr)
+            print(
+                "Validation failed: output data is invalid or incomplete.",
+                file=sys.stderr)
             print(e.errors()[0])
             sys.exit(1)
 
         except Exception as e:
-            print(f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
+            print(
+                f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
     output_file = pathlib.Path(args.output)
@@ -195,7 +213,9 @@ def main() -> None:
     pathlib.Path(args.output).touch(exist_ok=True)
 
     if not output_file.is_file():
-        print(f"This file '{args.output}' is not found, or it is a directory.", file=sys.stderr)
+        print(
+            f"This file '{args.output}' is not found, or it is a directory.",
+            file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -216,6 +236,8 @@ def main() -> None:
     seconds = int(total_seconds % 60)
 
     print(f"\nAll done in {minutes}m {seconds}s!")
+
+
 if __name__ == "__main__":
     try:
         main()

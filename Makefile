@@ -12,9 +12,9 @@ clean:
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 
 lint:
-	flake8 . --exclude=.venv
-	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+	flake8 src/ --exclude=.venv
+	mypy src/ --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 lint-strict:
-	flake8 . --exclude=.env
-	mypy . --strict
+	flake8 src/ --exclude=.env
+	mypy src/ --strict
