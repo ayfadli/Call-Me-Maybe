@@ -11,7 +11,6 @@ def get_probabilities(logits: np.ndarray) -> np.ndarray:
     exp_logits = np.exp(logits - np.max(logits))
     return exp_logits / np.sum(exp_logits)
 
-
 def render_dashboard(
         model: Any, masked_logits: np.ndarray,
         top_3_raw_tokens: list[str],
@@ -67,21 +66,21 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
     # Phase 4: The arguments
     return list(string.printable)
 
-
 def generate_constrained_json(
         model: Any, prompt_text: str, vocab_dict: Dict,
         allowed_fn: list[str], raw_functions: list[Dict[str, Any]],
         p4_valid_ids: list[int], clean_dict_items: list[tuple[int, str]],
-        func_params: Dict[str, int], visualize: bool) -> str:
+        func_params: Dict[str, int], visualize: bool, param_types: Dict[str, Dict[str, Any]]) -> str:
 
     schema_hints = json.dumps(raw_functions)
     prompt = (
         "System: You are a strict API. Output only valid JSON matching "
         f"these schemas: {schema_hints}. CRITICAL: If a parameter is a "
-        "'number', output float format without quotes.\n"
+        "'number', output float format without quotes (Example: if the parameter is an str output 'null').\n"
         f"User: {prompt_text}\n"
         "Tool Call: "
     )
+
     input_ids = model.encode(prompt).tolist()[0]
     vocab_size = np.array(model.get_logits_from_input_ids(input_ids)).shape[-1]
 
@@ -91,6 +90,11 @@ def generate_constrained_json(
 
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[p4_valid_ids] = True
+
+    p4_numbers_only = p4_mask.copy()
+    for i, s in clean_dict_items:
+        if s in string.digits:
+            p4_numbers_only[i] = False
 
     p4_no_comma = p4_mask.copy()
     for i, s in clean_dict_items:
@@ -109,6 +113,7 @@ def generate_constrained_json(
     ids_blacklist = []
     is_recovering = False
 
+    type_of_arg = "Any"
     while ('}}' not in current_str.replace(" ", "").replace("\n", "")
            and len(input_ids) < len(prompt) + max_tokens):
 
@@ -126,17 +131,26 @@ def generate_constrained_json(
         if len(rules) > 10:
             # Phase 4: Quota Shield
             clean_curr = current_str.replace(" ", "")
+
             func_name = clean_curr.split('"name":"')[1].split(
                 '"')[0] if '"name":"' in current_str else ""
+
             params = clean_curr.split('"parameters"')[
                 1] if '"parameters"' in current_str else ""
 
             # Enter if we are in the last parmeter
+            active_keys = re.findall(r'"([^"]+)"\s*:\s*$', params, re.MULTILINE)
+            print(active_keys)
+            if len(active_keys) > 0:
+                active_keys = active_keys[-1:]
+                type_of_arg = param_types[func_name].get(active_keys[0], []) if len(active_keys) > 0 else []
+
+            print(f"type of arg {type_of_arg}")
             param_count = len(re.findall(r'"([^"]+)"\s*:', params))
             if (param_count == func_params.get(func_name, 99)):
                 if params.count('"') % 2 != 0:
                     mask = p4_mask  # Inside string value
-                # The last parameter the AI generated was a String.
+                # If the last parameter the AI generated was a String.
                 elif current_str.strip().endswith('"'):
                     for i, s in mini_dict:
                         # Force the AI to close the JSON
@@ -144,6 +158,10 @@ def generate_constrained_json(
                             mask[i] = True
                 else:
                     mask = p4_no_comma
+
+            elif type_of_arg == "number":
+                mask = p4_numbers_only
+
             else:
                 # Target Quota is NOT met yet. Keep generating parameters.
                 mask = p4_mask

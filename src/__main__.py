@@ -69,10 +69,8 @@ def parse_arguments() -> argparse.Namespace:
 def load_json_file(filename: str) -> Any:
 
     if not pathlib.Path(filename).is_file():
-        print(
-            f"This file {filename} is not found, or it is a directory.",
-            file=sys.stderr)
-        sys.exit(1)
+        raise SystemExit(
+            f"This file {filename} is not found, or it is a directory.")
 
     try:
         with open(filename, 'r') as file:
@@ -126,11 +124,18 @@ def main() -> None:
     ]
 
     func_params = dict()
+    param_types = dict()
     for fn in raw_functions:
         try:
             func = FunctionDef(**fn)
             allowed_fn_names.append(func.name)
             func_params[func.name] = len(func.parameters)
+
+            params = fn.get("parameters", {})
+            param_types[func.name] = {}
+
+            for param_key, details in params.items():
+                param_types[func.name][param_key] = details.get("type", string)
 
         except ValidationError as e:
             print(
@@ -139,10 +144,20 @@ def main() -> None:
             print(e.errors()[0])
             sys.exit(1)
 
+            prompt_text,
+            vocab_dict,
+            allowed_fn_names,
+            raw_functions,
+            valid_ids,
+            clean_dict_items,
+            func_params,
+            args.visualize
         except Exception as e:
             print(
                 f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
+
+    print(param_types)
 
     final_results_list: list[dict[str, Any]] = []
     for prompt in raw_prompts:
@@ -159,7 +174,8 @@ def main() -> None:
             valid_ids,
             clean_dict_items,
             func_params,
-            args.visualize
+            args.visualize,
+            param_types
         )
 
         try:
@@ -180,7 +196,7 @@ def main() -> None:
                     if (
                         key in expected_params
                         and expected_params[key].get("type") == "number"
-                         ):
+                    ):
                         if isinstance(val, int) and not isinstance(val, bool):
                             extracted_dict["parameters"][key] = float(val)
                     elif isinstance(val, str):
