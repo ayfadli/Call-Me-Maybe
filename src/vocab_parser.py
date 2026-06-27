@@ -91,10 +91,14 @@ def generate_constrained_json(
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[p4_valid_ids] = True
 
-    p4_numbers_only = p4_mask.copy()
+
+    p4_numbers_only = np.zeros(vocab_size, dtype=bool)
+
+    allowed_math_chars = set("0123456789.-, } \n")
+
     for i, s in clean_dict_items:
-        if s in string.digits:
-            p4_numbers_only[i] = False
+        if all(char in allowed_math_chars for char in s) or s == "null":
+            p4_numbers_only[i] = True
 
     p4_no_comma = p4_mask.copy()
     for i, s in clean_dict_items:
@@ -129,42 +133,60 @@ def generate_constrained_json(
             # scores = [round(logits[t], 2) for t in top_3_ids]
 
         if len(rules) > 10:
-            # Phase 4: Quota Shield
-            clean_curr = current_str.replace(" ", "")
+            # --- PHASE 4: THE QUOTA & TYPE SHIELD ---
 
-            func_name = clean_curr.split('"name":"')[1].split(
-                '"')[0] if '"name":"' in current_str else ""
+            # 1. Safely extract function name
+            clean_curr = current_str.replace(" ", "").replace("\n", "")
+            func_name = clean_curr.split('"name":"')[1].split('"')[0] if '"name":"' in current_str else ""
 
-            params = clean_curr.split('"parameters"')[
-                1] if '"parameters"' in current_str else ""
+            # 2. Extract params from the RAW string to preserve perfect index math
+            params_str = current_str.split('"parameters"')[1] if '"parameters"' in current_str else ""
 
-            # Enter if we are in the last parmeter
-            active_keys = re.findall(r'"([^"]+)"\s*:\s*$', params, re.MULTILINE)
-            print(active_keys)
-            if len(active_keys) > 0:
-                active_keys = active_keys[-1:]
-                type_of_arg = param_types[func_name].get(active_keys[0], []) if len(active_keys) > 0 else []
+            if params_str:
+                last_comma_indx = params_str.rfind(',')
+                last_colon_indx = params_str.rfind(':')
+                last_brace_idx = params_str.rfind('}')
 
-            print(f"type of arg {type_of_arg}")
-            param_count = len(re.findall(r'"([^"]+)"\s*:', params))
-            if (param_count == func_params.get(func_name, 99)):
-                if params.count('"') % 2 != 0:
-                    mask = p4_mask  # Inside string value
-                # If the last parameter the AI generated was a String.
-                elif current_str.strip().endswith('"'):
-                    for i, s in mini_dict:
-                        # Force the AI to close the JSON
-                        if s.strip() == '}':
-                            mask[i] = True
+                # 3. Calculate exactly where the AI cursor is
+                is_inside_value = last_colon_indx > last_comma_indx and last_colon_indx > last_brace_idx
+
+                # 4. Find the active key without the '$' trap
+                active_key = ""
+                if is_inside_value:
+                    keys_found = re.findall(r'"([^"]+)"\s*:', params_str)
+                    if keys_found:
+                        active_key = keys_found[-1]
+
+                expected_type = param_types.get(func_name, {}).get(active_key, "Any")
+                param_count = len(re.findall(r'"([^"]+)"\s*:', params_str))
+                target_count = func_params.get(func_name, 99)
+
+                # --- 5. THE MASK ROUTER ---
+
+                # RULE A: Strict Types override everything when inside a value
+                if is_inside_value and expected_type == "number":
+                    mask = p4_numbers_only.copy() # Use .copy() to avoid mutating the global array!
+
+                    if param_count == target_count:
+                        for i, s in clean_dict_items:
+                            if ',' in s:
+                                mask[i] = False
+
+                # RULE B: String value state
+                elif is_inside_value and params_str.count('"') % 2 != 0:
+                    mask = p4_mask.copy()
+
+                # RULE C: Quota is MET. Force the close.
+                elif param_count == target_count:
+                    if current_str.strip().endswith('"') or current_str.strip().endswith(',') or current_str.strip().endswith('}'):
+                        # Apply your custom logic to force the AI to close the JSON here
+                        mask = p4_no_comma.copy()
+                    else:
+                        mask = p4_no_comma.copy()
+
+                # RULE D: Quota NOT met. Waiting for next key.
                 else:
-                    mask = p4_no_comma
-
-            elif type_of_arg == "number":
-                mask = p4_numbers_only
-
-            else:
-                # Target Quota is NOT met yet. Keep generating parameters.
-                mask = p4_mask
+                    mask = p4_mask.copy()
 
         # Phase 1-3: Strict Spelling
         else:

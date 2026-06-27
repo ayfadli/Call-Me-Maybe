@@ -9,7 +9,7 @@ from src.vocab_parser import generate_constrained_json
 from datetime import datetime
 import string
 import re
-
+from rich import print_json
 
 class FunctionDef(BaseModel):
     name: str
@@ -144,20 +144,10 @@ def main() -> None:
             print(e.errors()[0])
             sys.exit(1)
 
-            prompt_text,
-            vocab_dict,
-            allowed_fn_names,
-            raw_functions,
-            valid_ids,
-            clean_dict_items,
-            func_params,
-            args.visualize
         except Exception as e:
             print(
                 f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
-
-    print(param_types)
 
     final_results_list: list[dict[str, Any]] = []
     for prompt in raw_prompts:
@@ -210,6 +200,9 @@ def main() -> None:
 
             result = FunctionCallResult(**final_data)
             final_results_list.append(result.model_dump())
+
+            print()
+            print_json(data=final_data)
 
         except ValidationError as e:
             print(
