@@ -1,48 +1,9 @@
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
+import json
+import numpy as np
 import string
 import re
-import numpy as np
-from typing import Any, Dict
-import json
-import time
-
-
-def get_probabilities(logits: np.ndarray) -> np.ndarray:
-    """Converts raw logits to a probability distribution."""
-    exp_logits = np.exp(logits - np.max(logits))
-    return exp_logits / np.sum(exp_logits)
-
-def render_dashboard(
-        model: Any, masked_logits: np.ndarray,
-        top_3_raw_tokens: list[str],
-        raw_scores: list[str], current_str: str) -> None:
-
-    # THE FIX: [-3:][::-1] forces the array to be [Highest, Middle, Lowest]
-    top_3_masked_ids = np.argsort(masked_logits)[-3:][::-1]
-    top_3_masked_tokens = [model.decode([t]) for t in top_3_masked_ids]
-
-    ai_wants = " | ".join(
-        [f"'{repr(t)[1:-1]}' ({s})"
-         for t, s in zip(top_3_raw_tokens, raw_scores)])
-    we_got = repr(top_3_masked_tokens[0])[1:-1]
-
-    YELLOW = '\033[93m'
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    CYAN = '\033[96m'
-    RESET = '\033[0m'
-    CLEAR_LINE = '\033[K'
-
-    # Now it correctly compares Rank 1 vs Rank 1
-    if top_3_raw_tokens[0] != top_3_masked_tokens[0]:
-        action = f"{RED}[FSM OVERRIDE]{RESET} -> Blocked "
-        "'{repr(top_3_raw_tokens[0])[1:-1]}', Forced {GREEN}'{we_got}'{RESET}"
-    else:
-        action = f"{GREEN}[NATURAL]{RESET}      -> Allowed '{we_got}'"
-
-    print(f"{CLEAR_LINE} {YELLOW}AI Brain  :{RESET} {ai_wants}")
-    print(f"{CLEAR_LINE} {CYAN}FSM Engine:{RESET} {action}")
-    print(f"{CLEAR_LINE} {GREEN}JSON Build:{RESET} {current_str}")
-    print("\033[3A", end="", flush=True)
 
 
 def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
@@ -66,71 +27,101 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
     # Phase 4: The arguments
     return list(string.printable)
 
-def generate_constrained_json(
-        model: Any, prompt_text: str, vocab_dict: Dict,
-        allowed_fn: list[str], raw_functions: list[Dict[str, Any]],
-        p4_valid_ids: list[int], clean_dict_items: list[tuple[int, str]],
-        func_params: Dict[str, int], visualize: bool, param_types: Dict[str, Dict[str, Any]]) -> str:
+def generate_constrained_json(prompt_text: str, cache: Any) -> str:
 
-    schema_hints = json.dumps(raw_functions)
+    optimized_schemas = []
+    for f in cache.raw_functions:
+        optimized_schemas.append({
+            "name": f["name"],
+            "description": f.get("description", ""),
+            "parameters": f.get("parameters", {})
+        })
+
+    # Use separators to remove ALL spaces from the JSON string!
+    schema_hints = json.dumps(optimized_schemas, separators=(',', ':'))
+
     prompt = (
-        "System: You are a strict API. Output only valid JSON matching "
-        f"these schemas: {schema_hints}. CRITICAL: If a parameter is a "
-        "'number', output float format without quotes (Example: if the parameter is an str output 'null').\n"
+        f"System: Output valid JSON matching these schemas: {schema_hints}\n"
         f"User: {prompt_text}\n"
         "Tool Call: "
     )
 
-    input_ids = model.encode(prompt).tolist()[0]
-    vocab_size = np.array(model.get_logits_from_input_ids(input_ids)).shape[-1]
-
-    target_phrases = allowed_fn + ['{"name":"', '","parameters":{', '}']
-    mini_dict = [(i, s) for i, s in clean_dict_items if any(
-        s in phrase for phrase in target_phrases)]
-
-    p4_mask = np.zeros(vocab_size, dtype=bool)
-    p4_mask[p4_valid_ids] = True
-
-
-    p4_numbers_only = np.zeros(vocab_size, dtype=bool)
-
-    allowed_math_chars = set("0123456789.-, } \n")
-
-    for i, s in clean_dict_items:
-        if all(char in allowed_math_chars for char in s) or s == "null":
-            p4_numbers_only[i] = True
-
-    p4_no_comma = p4_mask.copy()
-    for i, s in clean_dict_items:
-        if ',' in s:
-            p4_no_comma[i] = False
+    input_ids = cache.model.encode(prompt).tolist()[0]
+    vocab_size = len(cache.model.get_logits_from_input_ids(input_ids))
 
     current_str = ""
 
     prefix = '{"name":"'
     current_str = prefix
 
-    input_ids.extend(model.encode(prefix).tolist()[0])
+    input_ids.extend(cache.model.encode(prefix).tolist()[0])
     bridge_injected = False
 
     max_tokens = 150
-    ids_blacklist = []
-    is_recovering = False
 
-    type_of_arg = "Any"
     while ('}}' not in current_str.replace(" ", "").replace("\n", "")
            and len(input_ids) < len(prompt) + max_tokens):
 
-        rules = get_allowed_chars(current_str, allowed_fn)
-        logits = np.array(model.get_logits_from_input_ids(input_ids))
-        mask = np.zeros(vocab_size, dtype=bool)
+        if prefix in current_str and '","parameters":{' not in current_str:
+            after_prefix = current_str.split(prefix)[1]
+            possible_names = [n for n in cache.allowed_fn if n.startswith(after_prefix)]
 
-        if visualize:
-            # np.argsort sorts smallest to largest.
-            # [-3:] gets the last 3 (the highest).
-            top_3_ids = np.argsort(logits)[-3:][::-1]
-            top_3_tokens = [model.decode([t]) for t in top_3_ids]
-            # scores = [round(logits[t], 2) for t in top_3_ids]
+            # If the LLM has typed enough to narrow it down to exactly ONE function:
+            if len(possible_names) == 1 and possible_names[0] != after_prefix:
+                # Teleport to the end of the word!
+                remainder = possible_names[0][len(after_prefix):] + '"'
+                current_str += remainder
+                input_ids.extend(cache.model.encode(remainder).tolist()[0])
+                continue
+
+        # 2. Bridge Fast-Forward (FIXED!)
+        # We added: len(current_str) > len(prefix) so it doesn't trigger on loop 1
+        if (current_str.endswith('"')
+            and not bridge_injected
+            and prefix in current_str
+            and len(current_str) > len(prefix)):
+
+            bridge = ',"parameters":{'
+            current_str += bridge
+            input_ids.extend(cache.model.encode(bridge).tolist()[0])
+            bridge_injected = True
+
+            # If the function takes ZERO parameters, end the JSON instantly!
+            func_name = current_str.split('"name":"')[1].split('"')[0]
+            if cache.func_params.get(func_name, 99) == 0:
+                current_str += "}}"
+                break
+            active_schema = next((f for f in cache.raw_functions if f["name"] == func_name), None)
+
+            if active_schema:
+                tiny_schema = json.dumps(
+                    [{
+                        "name": active_schema["name"],
+                        "description": active_schema.get("description", ""),
+                        "parameters": active_schema.get("parameters", {})
+                    }],
+                    separators=(',', ':')
+                )
+
+                # RESTORED SYSTEM/USER KEYWORDS!
+                tiny_prompt = (
+                    f"System: Output valid JSON matching this schema: {tiny_schema}\n"
+                    f"User: {prompt_text}\n"
+                    f"Tool Call: {current_str}"
+                )
+
+                # OVERWRITE the input_ids with the new, tiny version!
+                input_ids = cache.model.encode(tiny_prompt).tolist()[0]
+            else:
+                # Fallback just in case
+                input_ids.extend(cache.model.encode(bridge).tolist()[0])
+            # ===============================================================
+
+            continue
+
+        rules = get_allowed_chars(current_str, cache.allowed_fn)
+        logits = np.array(cache.model.get_logits_from_input_ids(input_ids))
+        mask = np.zeros(vocab_size, dtype=bool)
 
         if len(rules) > 10:
             # --- PHASE 4: THE QUOTA & TYPE SHIELD ---
@@ -157,87 +148,58 @@ def generate_constrained_json(
                     if keys_found:
                         active_key = keys_found[-1]
 
-                expected_type = param_types.get(func_name, {}).get(active_key, "Any")
+                expected_type = cache.param_types.get(func_name, {}).get(active_key, "Any")
                 param_count = len(re.findall(r'"([^"]+)"\s*:', params_str))
-                target_count = func_params.get(func_name, 99)
+                target_count = cache.func_params.get(func_name, 99)
 
                 # --- 5. THE MASK ROUTER ---
 
                 # RULE A: Strict Types override everything when inside a value
                 if is_inside_value and expected_type == "number":
-                    mask = p4_numbers_only.copy() # Use .copy() to avoid mutating the global array!
+                    mask = cache.p4_numbers_only.copy() # Use .copy() to avoid mutating the global array!
 
                     if param_count == target_count:
-                        for i, s in clean_dict_items:
+                        for i, s in cache.clean_dict_items:
                             if ',' in s:
                                 mask[i] = False
 
                 # RULE B: String value state
                 elif is_inside_value and params_str.count('"') % 2 != 0:
-                    mask = p4_mask.copy()
+                    mask = cache.p4_mask.copy()
 
                 # RULE C: Quota is MET. Force the close.
                 elif param_count == target_count:
                     if current_str.strip().endswith('"') or current_str.strip().endswith(',') or current_str.strip().endswith('}'):
                         # Apply your custom logic to force the AI to close the JSON here
-                        mask = p4_no_comma.copy()
+                        mask = cache.p4_no_comma.copy()
                     else:
-                        mask = p4_no_comma.copy()
+                        mask = cache.p4_no_comma.copy()
 
                 # RULE D: Quota NOT met. Waiting for next key.
                 else:
-                    mask = p4_mask.copy()
+                    mask = cache.p4_mask.copy()
 
         # Phase 1-3: Strict Spelling
         else:
-            for i, s in mini_dict:
+            for i, s in cache.mini_dict:
                 if any(rule.startswith(s) for rule in rules):
                     mask[i] = True
 
         logits[~mask] = -np.inf
 
-        # The recovery system
-        if np.max(logits) == -np.inf:
-            bad_token_id = input_ids.pop()
-            current_str = model.decode(input_ids)
-            ids_blacklist.append(bad_token_id)
-            is_recovering = True
-            print("Dead end detected! Initiating rollback...")
-            continue
-
-        if is_recovering:
-            for bad_id in ids_blacklist:
-                logits[bad_id] = -np.inf
-        else:
-            ids_blacklist.clear()
-
-        is_recovering = False
-
         best_id = int(np.argmax(logits))
-        current_str += vocab_dict.get(best_id, "")
+        current_str += cache.vocab_dict.get(best_id, "")
         input_ids.append(best_id)
 
         if current_str.endswith('"') and not bridge_injected and prefix in current_str:
             bridge = ',"parameters":{'
             current_str += bridge
-            input_ids.extend(model.encode(bridge).tolist()[0])
+            input_ids.extend(cache.model.encode(bridge).tolist()[0])
             bridge_injected = True
             continue
 
-        if visualize:
-            top_3_ids = np.argsort(logits)[-3:][::-1]
-            top_3_tokens = [model.decode([t]) for t in top_3_ids]
-
-            probs = get_probabilities(logits)
-            scores = [f"{probs[t] * 100:.1f}%" for t in top_3_ids]
-            render_dashboard(model, logits, top_3_tokens, scores, current_str)
-
-            time.sleep(1)
         else:
             print(f"\rGenerating: {current_str}", end="", flush=True)
-
-    if visualize:
-        print("\n\n\n")
 
     print()
     return current_str[:current_str.rfind('}') + 1] if '}' in current_str else current_str
