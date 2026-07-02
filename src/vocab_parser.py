@@ -1,3 +1,4 @@
+from pydantic import functional_validators
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 import json
@@ -27,6 +28,7 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
     # Phase 4: The arguments
     return list(string.printable)
 
+
 def generate_constrained_json(prompt_text: str, cache: Any) -> str:
 
     optimized_schemas = []
@@ -41,7 +43,8 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
     schema_hints = json.dumps(optimized_schemas, separators=(',', ':'))
 
     prompt = (
-        f"System: Output valid JSON matching these schemas: {schema_hints}\n"
+        f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}\n"
+        "Rule: When writing regex, Always use regex pattern instead of literal text."
         f"User: {prompt_text}\n"
         "Tool Call: "
     )
@@ -62,11 +65,12 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
     while ('}}' not in current_str.replace(" ", "").replace("\n", "")
            and len(input_ids) < len(prompt) + max_tokens):
 
+        # 1. Teleport
         if prefix in current_str and '","parameters":{' not in current_str:
             after_prefix = current_str.split(prefix)[1]
-            possible_names = [n for n in cache.allowed_fn if n.startswith(after_prefix)]
+            possible_names = [
+                n for n in cache.allowed_fn if n.startswith(after_prefix)]
 
-            # If the LLM has typed enough to narrow it down to exactly ONE function:
             if len(possible_names) == 1 and possible_names[0] != after_prefix:
                 # Teleport to the end of the word!
                 remainder = possible_names[0][len(after_prefix):] + '"'
@@ -74,12 +78,11 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 input_ids.extend(cache.model.encode(remainder).tolist()[0])
                 continue
 
-        # 2. Bridge Fast-Forward (FIXED!)
-        # We added: len(current_str) > len(prefix) so it doesn't trigger on loop 1
+        # 2. Bridge Fast-Forward
         if (current_str.endswith('"')
             and not bridge_injected
             and prefix in current_str
-            and len(current_str) > len(prefix)):
+                and len(current_str) > len(prefix)):
 
             bridge = ',"parameters":{'
             current_str += bridge
@@ -91,7 +94,9 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             if cache.func_params.get(func_name, 99) == 0:
                 current_str += "}}"
                 break
-            active_schema = next((f for f in cache.raw_functions if f["name"] == func_name), None)
+
+            active_schema = next(
+                (f for f in cache.raw_functions if f["name"] == func_name), None)
 
             if active_schema:
                 tiny_schema = json.dumps(
@@ -106,6 +111,7 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 # RESTORED SYSTEM/USER KEYWORDS!
                 tiny_prompt = (
                     f"System: Output valid JSON matching this schema: {tiny_schema}\n"
+                    'Rule: When writing regex, Always use regex pattern sets like "[aeiouAEIOU]", "[\\d+]", or "[0-9]+" instead of literal text.'
                     f"User: {prompt_text}\n"
                     f"Tool Call: {current_str}"
                 )
@@ -115,7 +121,6 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             else:
                 # Fallback just in case
                 input_ids.extend(cache.model.encode(bridge).tolist()[0])
-            # ===============================================================
 
             continue
 
@@ -126,37 +131,37 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
         if len(rules) > 10:
             # --- PHASE 4: THE QUOTA & TYPE SHIELD ---
 
-            # 1. Safely extract function name
-            clean_curr = current_str.replace(" ", "").replace("\n", "")
-            func_name = clean_curr.split('"name":"')[1].split('"')[0] if '"name":"' in current_str else ""
+            match = re.search(r'"name"\s*:\s*"([^"]+)', current_str)
+            func_name = match.group(1) if match else ""
 
-            # 2. Extract params from the RAW string to preserve perfect index math
-            params_str = current_str.split('"parameters"')[1] if '"parameters"' in current_str else ""
+            params_str = current_str.split('"parameters"')[
+                1] if '"parameters"' in current_str else ""
 
             if params_str:
                 last_comma_indx = params_str.rfind(',')
                 last_colon_indx = params_str.rfind(':')
                 last_brace_idx = params_str.rfind('}')
 
-                # 3. Calculate exactly where the AI cursor is
                 is_inside_value = last_colon_indx > last_comma_indx and last_colon_indx > last_brace_idx
 
-                # 4. Find the active key without the '$' trap
                 active_key = ""
                 if is_inside_value:
                     keys_found = re.findall(r'"([^"]+)"\s*:', params_str)
                     if keys_found:
                         active_key = keys_found[-1]
 
-                expected_type = cache.param_types.get(func_name, {}).get(active_key, "Any")
+                expected_type = cache.param_types.get(
+                    func_name, {}).get(active_key, "Any")
+
                 param_count = len(re.findall(r'"([^"]+)"\s*:', params_str))
                 target_count = cache.func_params.get(func_name, 99)
 
-                # --- 5. THE MASK ROUTER ---
+                # --- THE MASK ROUTER ---
 
                 # RULE A: Strict Types override everything when inside a value
                 if is_inside_value and expected_type == "number":
-                    mask = cache.p4_numbers_only.copy() # Use .copy() to avoid mutating the global array!
+                    # Use .copy() to avoid mutating the global array!
+                    mask = cache.p4_numbers_only.copy()
 
                     if param_count == target_count:
                         for i, s in cache.clean_dict_items:

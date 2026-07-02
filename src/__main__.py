@@ -29,7 +29,7 @@ class MaskCache:
     p4_numbers_only: np.ndarray
     p4_no_comma: np.ndarray
     mini_dict: List[Tuple[int, str]]
-    clean_dict_items: List[Tuple[int, str]] # Keep this if you still loop over it in Rule A
+    clean_dict_items: List[Tuple[int, str]]
 
 class FunctionDef(BaseModel):
     name: str
@@ -165,32 +165,26 @@ def main() -> None:
                 f"An unexpected error occured.\nDetails: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # We need the vocab size to build the masks
     dummy_input_ids = model.encode("dummy").tolist()[0]
     vocab_size = len(model.get_logits_from_input_ids(dummy_input_ids))
 
-    # Pre-calculate p4_mask
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[valid_ids] = True
 
-    # Pre-calculate p4_numbers_only
     p4_numbers_only = np.zeros(vocab_size, dtype=bool)
     allowed_math_chars = set("0123456789.-, }")
     for i, s in clean_dict_items:
         if all(char in allowed_math_chars for char in s) or s == "null":
             p4_numbers_only[i] = True
 
-    # Pre-calculate p4_no_comma
     p4_no_comma = p4_mask.copy()
     for i, s in clean_dict_items:
         if ',' in s:
             p4_no_comma[i] = False
 
-    # Pre-calculate mini_dict
     target_phrases = allowed_fn_names + ['{"name":"', '","parameters":{', '}']
     mini_dict = [(i, s) for i, s in clean_dict_items if any(s in phrase for phrase in target_phrases)]
 
-    # Bundle everything into the Cache object
     cache = MaskCache(
         model=model,
         vocab_dict=vocab_dict,
