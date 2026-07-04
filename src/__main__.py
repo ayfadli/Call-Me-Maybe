@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 from pydantic import BaseModel, ValidationError, ConfigDict
+from pydantic.dataclasses import dataclass
 import pathlib
 from llm_sdk import Small_LLM_Model
 from src.vocab_parser import generate_constrained_json
@@ -12,14 +13,12 @@ from rich import print_json
 import numpy as np
 from typing import Any, Dict, List, Tuple
 
-
-class MaskCache(BaseModel):
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+class MaskCache:
     """Cache structure to hold the LLM model instance and pre-computed data.
 
     This avoids recalculating valid tokens or dictionaries on each pass.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: Any
     vocab_dict: Dict[int, str]
