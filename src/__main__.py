@@ -2,7 +2,6 @@ import argparse
 import json
 import sys
 from pydantic import BaseModel, ValidationError
-from typing import Any, Dict
 import pathlib
 from llm_sdk import Small_LLM_Model
 from src.vocab_parser import generate_constrained_json
@@ -31,6 +30,7 @@ class MaskCache:
     mini_dict: List[Tuple[int, str]]
     clean_dict_items: List[Tuple[int, str]]
 
+
 class FunctionDef(BaseModel):
     name: str
     description: str
@@ -49,7 +49,8 @@ def parse_arguments() -> argparse.Namespace:
         prog="CallMeMaybe",
         description="Call Me Maybe: LLM Function Calling Tool",
         usage="uv run python -m src [--functions_definition "
-        "<function_definition_file>] [--input <input_file>] [--output <output_file>]"
+        "<function_definition_file>] [--input <input_file>] "
+        "[--output <output_file>]"
     )
 
     parser.add_argument(
