@@ -1,7 +1,7 @@
 import argparse
 import json
 import sys
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, ConfigDict
 import pathlib
 from llm_sdk import Small_LLM_Model
 from src.vocab_parser import generate_constrained_json
@@ -9,13 +9,18 @@ from datetime import datetime
 import string
 import re
 from rich import print_json
-from dataclasses import dataclass
 import numpy as np
 from typing import Any, Dict, List, Tuple
 
 
-@dataclass
-class MaskCache:
+class MaskCache(BaseModel):
+    """Cache structure to hold the LLM model instance and pre-computed data.
+
+    This avoids recalculating valid tokens or dictionaries on each pass.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     model: Any
     vocab_dict: Dict[int, str]
 
@@ -24,14 +29,16 @@ class MaskCache:
     func_params: Dict[str, int]
     param_types: Dict[str, Dict[str, Any]]
 
-    p4_mask: np.ndarray
-    p4_numbers_only: np.ndarray
-    p4_no_comma: np.ndarray
+    p4_mask: np.ndarray[Any, Any]
+    p4_numbers_only: np.ndarray[Any, Any]
+    p4_no_comma: np.ndarray[Any, Any]
     mini_dict: List[Tuple[int, str]]
     clean_dict_items: List[Tuple[int, str]]
 
 
 class FunctionDef(BaseModel):
+    """Pydantic model representing a function definition schema."""
+
     name: str
     description: str
     parameters: Dict[str, Any]
@@ -39,12 +46,19 @@ class FunctionDef(BaseModel):
 
 
 class FunctionCallResult(BaseModel):
+    """Pydantic model representing a generated function call result."""
+
     prompt: str
     name: str
     parameters: Dict[str, Any]
 
 
 def parse_arguments() -> argparse.Namespace:
+    """Parse command line arguments for the application.
+
+    Returns:
+        argparse.Namespace: The parsed command line arguments.
+    """
     parser = argparse.ArgumentParser(
         prog="CallMeMaybe",
         description="Call Me Maybe: LLM Function Calling Tool",
@@ -84,6 +98,18 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def load_json_file(filename: str) -> Any:
+    """Load and parse a JSON file.
+
+    Args:
+        filename (str): The path to the JSON file to load.
+
+    Returns:
+        Any: The parsed JSON data.
+
+    Raises:
+        SystemExit: If the file is not found, cannot be parsed,
+            or has permission issues.
+    """
 
     if not pathlib.Path(filename).is_file():
         raise SystemExit(
@@ -110,6 +136,10 @@ def load_json_file(filename: str) -> Any:
 
 
 def main() -> None:
+    """Main execution block.
+
+    Orchestrates loading models, creating masks, and running prompts.
+    """
     args = parse_arguments()
 
     raw_functions: list[dict[str, Any]] = load_json_file(
@@ -122,9 +152,11 @@ def main() -> None:
 
     start_time = datetime.now()
     vocab_file = model.get_path_to_vocab_file()
-    vocab_dict: dict[int, str] = load_json_file(vocab_file)
+    raw_vocab: dict[str, int] = load_json_file(vocab_file)
 
-    vocab_dict = {v: k.replace('Ġ', ' ') for k, v in vocab_dict.items()}
+    vocab_dict: dict[int, str] = {
+        v: k.replace('Ġ', ' ') for k, v in raw_vocab.items()
+    }
 
     printable_set: set[str] = set(string.printable)
 
@@ -140,8 +172,8 @@ def main() -> None:
         if v and all(c in printable_set for c in v)
     ]
 
-    func_params = dict()
-    param_types = dict()
+    func_params: dict[str, int] = dict()
+    param_types: dict[str, dict[str, Any]] = dict()
     for fn in raw_functions:
         try:
             func = FunctionDef(**fn)
@@ -184,7 +216,10 @@ def main() -> None:
             p4_no_comma[i] = False
 
     target_phrases = allowed_fn_names + ['{"name":"', '","parameters":{', '}']
-    mini_dict = [(i, s) for i, s in clean_dict_items if any(s in phrase for phrase in target_phrases)]
+    mini_dict = [
+        (i, s) for i, s in clean_dict_items
+        if any(s in phrase for phrase in target_phrases)
+    ]
 
     cache = MaskCache(
         model=model,

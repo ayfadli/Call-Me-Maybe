@@ -1,6 +1,4 @@
-from pydantic import functional_validators
-from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any
 import json
 import numpy as np
 import string
@@ -8,6 +6,15 @@ import re
 
 
 def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
+    """Determine the next valid characters based on the JSON string state.
+
+    Args:
+        current_str (str): The partially generated JSON string.
+        allowed_names (list[str]): List of valid function names.
+
+    Returns:
+        list[str]: A list of allowed character sequences for the next step.
+    """
     # Phase 1
     prefix = '{"name":"'
     if len(current_str) < len(prefix):
@@ -30,6 +37,15 @@ def get_allowed_chars(current_str: str, allowed_names: list[str]) -> list[str]:
 
 
 def generate_constrained_json(prompt_text: str, cache: Any) -> str:
+    """Generate a valid function call JSON using constrained decoding.
+
+    Args:
+        prompt_text (str): The natural language user prompt.
+        cache (Any): MaskCache instance with model and pre-computed masks.
+
+    Returns:
+        str: The generated valid JSON string representing the function call.
+    """
 
     optimized_schemas = []
     for f in cache.raw_functions:
@@ -43,8 +59,12 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
     schema_hints = json.dumps(optimized_schemas, separators=(',', ':'))
 
     prompt = (
-        f"System: You are a strict API. Output ONLY valid JSON matching these schemas: {schema_hints}\n"
-        "Rule: When writing regex, Always use regex pattern instead of literal text."
+        f"System: You are a strict API. Output ONLY valid JSON matching "
+        f"these schemas: {schema_hints}\n"
+        r"Rule: For the regex field, NEVER output literal matches. "
+        r"Always use proper regex sets (e.g. '[aeiouAEIOU]', '[0-9]+', '\\bword\\b'). "
+        r"For replacement, if asked for a character (e.g. asterisks), output EXACTLY ONE character (e.g. '*')."
+        "\n"
         f"User: {prompt_text}\n"
         "Tool Call: "
     )
@@ -96,7 +116,9 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 break
 
             active_schema = next(
-                (f for f in cache.raw_functions if f["name"] == func_name), None)
+                (f for f in cache.raw_functions if f["name"] == func_name),
+                None
+            )
 
             if active_schema:
                 tiny_schema = json.dumps(
@@ -110,8 +132,12 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
 
                 # RESTORED SYSTEM/USER KEYWORDS!
                 tiny_prompt = (
-                    f"System: Output valid JSON matching this schema: {tiny_schema}\n"
-                    'Rule: When writing regex, Always use regex pattern sets like "[aeiouAEIOU]", "[\\d+]", or "[0-9]+" instead of literal text.'
+                    f"System: Output valid JSON matching this schema: "
+                    f"{tiny_schema}\n"
+                    r"Rule: For the regex field, NEVER output literal matches. "
+                    r'Always use proper regex sets (e.g. "[aeiouAEIOU]", "[0-9]+", "\\bword\\b"). '
+                    r"For replacement, if asked for a character (e.g. asterisks), output EXACTLY ONE character (e.g. '*')."
+                    "\n"
                     f"User: {prompt_text}\n"
                     f"Tool Call: {current_str}"
                 )
@@ -142,7 +168,10 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 last_colon_indx = params_str.rfind(':')
                 last_brace_idx = params_str.rfind('}')
 
-                is_inside_value = last_colon_indx > last_comma_indx and last_colon_indx > last_brace_idx
+                is_inside_value = (
+                    last_colon_indx > last_comma_indx
+                    and last_colon_indx > last_brace_idx
+                )
 
                 active_key = ""
                 if is_inside_value:
@@ -172,10 +201,23 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 elif is_inside_value and params_str.count('"') % 2 != 0:
                     mask = cache.p4_mask.copy()
 
+                    if active_key == "regex":
+                        for i, s in cache.clean_dict_items:
+                            if ' ' in s:
+                                mask[i] = False
+                        
+                        if re.search(r'"regex"\s*:\s*"$', params_str):
+                            for i, s in cache.clean_dict_items:
+                                if not any(s.startswith(c) for c in ['[', '\\']):
+                                    mask[i] = False
+
                 # RULE C: Quota is MET. Force the close.
                 elif param_count == target_count:
-                    if current_str.strip().endswith('"') or current_str.strip().endswith(',') or current_str.strip().endswith('}'):
-                        # Apply your custom logic to force the AI to close the JSON here
+                    if (current_str.strip().endswith('"')
+                            or current_str.strip().endswith(',')
+                            or current_str.strip().endswith('}')):
+                        # Apply your custom logic to force the AI
+                        # to close the JSON here
                         mask = cache.p4_no_comma.copy()
                     else:
                         mask = cache.p4_no_comma.copy()
@@ -183,6 +225,15 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 # RULE D: Quota NOT met. Waiting for next key.
                 else:
                     mask = cache.p4_mask.copy()
+                    is_expecting_key = (
+                        params_str.strip().endswith('{')
+                        or params_str.strip().endswith(',')
+                    )
+                    if is_expecting_key:
+                        for i, s in cache.clean_dict_items:
+                            cleaned = s.strip()
+                            if not (cleaned.startswith('"') or not cleaned):
+                                mask[i] = False
 
         # Phase 1-3: Strict Spelling
         else:
@@ -196,7 +247,9 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
         current_str += cache.vocab_dict.get(best_id, "")
         input_ids.append(best_id)
 
-        if current_str.endswith('"') and not bridge_injected and prefix in current_str:
+        if (current_str.endswith('"')
+                and not bridge_injected
+                and prefix in current_str):
             bridge = ',"parameters":{'
             current_str += bridge
             input_ids.extend(cache.model.encode(bridge).tolist()[0])
@@ -207,4 +260,6 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             print(f"\rGenerating: {current_str}", end="", flush=True)
 
     print()
-    return current_str[:current_str.rfind('}') + 1] if '}' in current_str else current_str
+    if '}' in current_str:
+        return current_str[:current_str.rfind('}') + 1]
+    return current_str
