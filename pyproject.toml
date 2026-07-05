@@ -7,6 +7,7 @@ dependencies = [
     "fire>=0.7.1",
     "pydantic>=2.11.0",
     "colorama>=0.4.6",
+    "llm-sdk",
 ]
 
 [build-system]
@@ -15,3 +16,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["moulinette"]
+
+[tool.uv.workspace]
+members = [
+    "llm_sdk",
+]
+
+[tool.uv.sources]
+llm-sdk = { workspace = true }
