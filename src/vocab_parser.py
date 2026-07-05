@@ -55,7 +55,7 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             "parameters": f.get("parameters", {})
         })
 
-    # Use separators to remove ALL spaces from the JSON string!
+    # Remove ALL spaces from JSON string
     schema_hints = json.dumps(optimized_schemas, separators=(',', ':'))
 
     prompt = (
@@ -85,20 +85,19 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
     while ('}}' not in current_str.replace(" ", "").replace("\n", "")
            and len(input_ids) < len(prompt) + max_tokens):
 
-        # 1. Teleport
+        # Teleport
         if prefix in current_str and '","parameters":{' not in current_str:
             after_prefix = current_str.split(prefix)[1]
             possible_names = [
                 n for n in cache.allowed_fn if n.startswith(after_prefix)]
 
             if len(possible_names) == 1 and possible_names[0] != after_prefix:
-                # Teleport to the end of the word!
                 remainder = possible_names[0][len(after_prefix):] + '"'
                 current_str += remainder
                 input_ids.extend(cache.model.encode(remainder).tolist()[0])
                 continue
 
-        # 2. Bridge Fast-Forward
+        # Bridge Fast-Forward
         if (current_str.endswith('"')
             and not bridge_injected
             and prefix in current_str
@@ -109,7 +108,6 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             input_ids.extend(cache.model.encode(bridge).tolist()[0])
             bridge_injected = True
 
-            # If the function takes ZERO parameters, end the JSON instantly!
             func_name = current_str.split('"name":"')[1].split('"')[0]
             if cache.func_params.get(func_name, 99) == 0:
                 current_str += "}}"
@@ -130,7 +128,6 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                     separators=(',', ':')
                 )
 
-                # RESTORED SYSTEM/USER KEYWORDS!
                 tiny_prompt = (
                     f"System: Output valid JSON matching this schema: "
                     f"{tiny_schema}\n"
@@ -142,10 +139,8 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                     f"Tool Call: {current_str}"
                 )
 
-                # OVERWRITE the input_ids with the new, tiny version!
                 input_ids = cache.model.encode(tiny_prompt).tolist()[0]
             else:
-                # Fallback just in case
                 input_ids.extend(cache.model.encode(bridge).tolist()[0])
 
             continue
@@ -187,9 +182,7 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
 
                 # --- THE MASK ROUTER ---
 
-                # RULE A: Strict Types override everything when inside a value
                 if is_inside_value and expected_type == "number":
-                    # Use .copy() to avoid mutating the global array!
                     mask = cache.p4_numbers_only.copy()
 
                     if param_count == target_count:
@@ -197,7 +190,7 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                             if ',' in s:
                                 mask[i] = False
 
-                # RULE B: String value state
+                # String value state
                 elif is_inside_value and params_str.count('"') % 2 != 0:
                     mask = cache.p4_mask.copy()
 
@@ -211,18 +204,18 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                                 if not any(s.startswith(c) for c in ['[', '\\']):
                                     mask[i] = False
 
-                # RULE C: Quota is MET. Force the close.
                 elif param_count == target_count:
                     if (current_str.strip().endswith('"')
                             or current_str.strip().endswith(',')
                             or current_str.strip().endswith('}')):
-                        # Apply your custom logic to force the AI
-                        # to close the JSON here
-                        mask = cache.p4_no_comma.copy()
+                        mask = np.zeros(vocab_size, dtype=bool)
+                        for i, s in cache.clean_dict_items:
+                            cleaned = s.strip()
+                            if cleaned.startswith('}') or not cleaned:
+                                mask[i] = True
                     else:
                         mask = cache.p4_no_comma.copy()
 
-                # RULE D: Quota NOT met. Waiting for next key.
                 else:
                     mask = cache.p4_mask.copy()
                     is_expecting_key = (
