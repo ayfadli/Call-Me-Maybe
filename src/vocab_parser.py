@@ -84,7 +84,7 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
 
     max_tokens = 150
 
-    while ('}}' not in current_str.replace(" ", "").replace("\n", "")
+    while (not current_str.replace(" ", "").replace("\n", "").endswith('}}')
            and len(input_ids) < len(prompt) + max_tokens):
 
         # Teleport
@@ -165,13 +165,26 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 1] if '"parameters"' in current_str else ""
 
             if params_str:
-                last_comma_indx = params_str.rfind(',')
-                last_colon_indx = params_str.rfind(':')
-                last_brace_idx = params_str.rfind('}')
+                in_string = False
+                last_structural_colon = -1
+                last_structural_comma = -1
+                last_structural_brace = -1
+
+                for i, char in enumerate(params_str):
+                    if char == '"':
+                        if i == 0 or params_str[i-1] != '\\':
+                            in_string = not in_string
+                    elif not in_string:
+                        if char == ':':
+                            last_structural_colon = i
+                        elif char == ',':
+                            last_structural_comma = i
+                        elif char == '}':
+                            last_structural_brace = i
 
                 is_inside_value = (
-                    last_colon_indx > last_comma_indx
-                    and last_colon_indx > last_brace_idx
+                    last_structural_colon > last_structural_comma
+                    and last_structural_colon > last_structural_brace
                 )
 
                 active_key = ""
@@ -197,8 +210,13 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                                 mask[i] = False
 
                 # String value state
-                elif is_inside_value and params_str.count('"') % 2 != 0:
+                elif is_inside_value and in_string:
                     mask = cache.p4_mask.copy()
+
+                    if param_count == target_count:
+                        for i, s in cache.clean_dict_items:
+                            if '",' in s.replace(" ", ""):
+                                mask[i] = False
 
                     if active_key == "regex":
                         for i, s in cache.clean_dict_items:
@@ -212,14 +230,16 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                                     mask[i] = False
 
                 elif param_count == target_count:
-                    if (current_str.strip().endswith('"')
-                            or current_str.strip().endswith(',')
-                            or current_str.strip().endswith('}')):
-                        mask = np.zeros(vocab_size, dtype=bool)
-                        for i, s in cache.clean_dict_items:
-                            cleaned = s.strip()
-                            if cleaned.startswith('}') or not cleaned:
-                                mask[i] = True
+                    clean_str = current_str.strip()
+                    if clean_str.endswith('"'):
+                        current_str = clean_str + "}}"
+                        break
+                    elif clean_str.endswith('}'):
+                        current_str = clean_str + "}"
+                        break
+                    elif clean_str.endswith(','):
+                        current_str = clean_str[:-1] + "}}"
+                        break
                     else:
                         mask = cache.p4_no_comma.copy()
 
@@ -260,6 +280,4 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
             print(f"\rGenerating: {current_str}", end="", flush=True)
 
     print()
-    if '}' in current_str:
-        return current_str[:current_str.rfind('}') + 1]
     return current_str
