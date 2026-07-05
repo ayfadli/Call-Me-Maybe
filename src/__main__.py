@@ -183,7 +183,7 @@ def main() -> None:
             param_types[func.name] = {}
 
             for param_key, details in params.items():
-                param_types[func.name][param_key] = details.get("type", string)
+                param_types[func.name][param_key] = details.get("type")
 
         except ValidationError as e:
             print(
@@ -202,6 +202,7 @@ def main() -> None:
 
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[valid_ids] = True
+
 
     p4_numbers_only = np.zeros(vocab_size, dtype=bool)
     allowed_math_chars = set("0123456789.-, }")
@@ -243,9 +244,7 @@ def main() -> None:
         raw_json_string = generate_constrained_json(prompt_text, cache)
 
         try:
-            # The (?!...) part means "not followed by"
-            json_str = re.sub(
-                r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', raw_json_string)
+            json_str = raw_json_string
             extracted_dict = json.loads(json_str)
 
             fn_name = extracted_dict.get("name")

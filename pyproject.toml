@@ -1,29 +1,17 @@
 [project]
-name = "call-me-maybe"
+name = "moulinette"
 version = "0.1.0"
-description = "Call Me Maybe: LLM Function Calling Tool"
-readme = "README.md"
+description = "Moulinette for function calling exercise grading"
 requires-python = ">=3.10"
 dependencies = [
-    "accelerate>=1.13.0",
     "fire>=0.7.1",
-    "llm-sdk",
-    "numpy>=2.2.6",
-    "pydantic>=2.13.3",
-    "torch>=2.11.0",
-    "transformers>=5.6.0",
+    "pydantic>=2.11.0",
+    "colorama>=0.4.6",
 ]
 
-[tool.pyright]
-extraPaths = ["./llm_sdk"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.mypy]
-mypy_path = "llm_sdk"
-
-[tool.uv.workspace]
-members = [
-    "llm_sdk",
-]
-
-[tool.uv.sources]
-llm-sdk = { workspace = true }
+[tool.hatch.build.targets.wheel]
+packages = ["moulinette"]
