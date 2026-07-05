@@ -62,8 +62,10 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
         f"System: You are a strict API. Output ONLY valid JSON matching "
         f"these schemas: {schema_hints}\n"
         r"Rule: For the regex field, NEVER output literal matches. "
-        r"Always use proper regex sets (e.g. '[aeiouAEIOU]', '[0-9]+', '\\bword\\b'). "
-        r"For replacement, if asked for a character (e.g. asterisks), output EXACTLY ONE character (e.g. '*')."
+        r"Always use proper regex sets "
+        r"(e.g. '[aeiouAEIOU]', '[0-9]+', '\\bword\\b'). "
+        r"For replacement, if asked for a character (e.g. asterisks), "
+        r"output EXACTLY ONE character (e.g. '*')."
         "\n"
         f"User: {prompt_text}\n"
         "Tool Call: "
@@ -131,9 +133,13 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                 tiny_prompt = (
                     f"System: Output valid JSON matching this schema: "
                     f"{tiny_schema}\n"
-                    r"Rule: For the regex field, NEVER output literal matches. "
-                    r'Always use proper regex sets (e.g. "[aeiouAEIOU]", "[0-9]+", "\\bword\\b"). '
-                    r"For replacement, if asked for a character (e.g. asterisks), output EXACTLY ONE character (e.g. '*')."
+                    r"Rule: For the regex field, NEVER output "
+                    r"literal matches. "
+                    r'Always use proper regex sets '
+                    r'(e.g. "[aeiouAEIOU]", "[0-9]+", "\\bword\\b"). '
+                    r"For replacement, if asked for a character "
+                    r"(e.g. asterisks), output EXACTLY ONE character "
+                    r"(e.g. '*')."
                     "\n"
                     f"User: {prompt_text}\n"
                     f"Tool Call: {current_str}"
@@ -198,10 +204,11 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                         for i, s in cache.clean_dict_items:
                             if ' ' in s:
                                 mask[i] = False
-                        
+
                         if re.search(r'"regex"\s*:\s*"$', params_str):
                             for i, s in cache.clean_dict_items:
-                                if not any(s.startswith(c) for c in ['[', '\\']):
+                                if not any(s.startswith(c)
+                                           for c in ['[', '\\']):
                                     mask[i] = False
 
                 elif param_count == target_count:

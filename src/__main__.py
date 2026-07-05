@@ -4,14 +4,14 @@ import sys
 from pydantic import BaseModel, ValidationError, ConfigDict
 from pydantic.dataclasses import dataclass
 import pathlib
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore
 from src.vocab_parser import generate_constrained_json
 from datetime import datetime
 import string
-import re
 from rich import print_json
 import numpy as np
 from typing import Any, Dict, List, Tuple
+
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class MaskCache:
@@ -202,7 +202,6 @@ def main() -> None:
 
     p4_mask = np.zeros(vocab_size, dtype=bool)
     p4_mask[valid_ids] = True
-
 
     p4_numbers_only = np.zeros(vocab_size, dtype=bool)
     allowed_math_chars = set("0123456789.-, }")
