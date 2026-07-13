@@ -233,12 +233,15 @@ def generate_constrained_json(prompt_text: str, cache: Any) -> str:
                     clean_str = current_str.strip()
                     if clean_str.endswith('"'):
                         current_str = clean_str + "}}"
+                        print(f"\rGenerating: {current_str}", end="", flush=True)
                         break
                     elif clean_str.endswith('}'):
                         current_str = clean_str + "}"
+                        print(f"\rGenerating: {current_str}", end="", flush=True)
                         break
                     elif clean_str.endswith(','):
                         current_str = clean_str[:-1] + "}}"
+                        print(f"\rGenerating: {current_str}", end="", flush=True)
                         break
                     else:
                         mask = cache.p4_no_comma.copy()
